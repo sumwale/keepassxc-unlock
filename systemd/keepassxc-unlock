@@ -45,7 +45,9 @@ function do_unlock() {
   wait_secs=$4
 
   # skip unlock if LockedHint is true
-  if gdbus call -y -d org.freedesktop.login1 -o $selected_session -m org.freedesktop.DBus.Properties.Get org.freedesktop.login1.Session LockedHint | grep -qw true; then
+  if gdbus call -y -d org.freedesktop.login1 -o $selected_session -m \
+      org.freedesktop.DBus.Properties.Get org.freedesktop.login1.Session LockedHint | \
+      grep -qw true; then
     echo "Skipping unlock since screen/session is still locked!"
     return 0
   fi
@@ -71,7 +73,10 @@ function do_unlock() {
     done < $conf_file
     passwd=$(echo -ne "$enc_pwd" | systemd-creds --name=$conf_name decrypt - -)
     for i in $(seq $wait_secs); do
-      if sudo -u "#$user_id" env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" dbus-send --session --print-reply --dest=org.keepassxc.KeePassXC.MainWindow /keepassxc org.keepassxc.KeePassXC.MainWindow.openDatabase "string:$kdbx_file" "string:$passwd" "string:$key_file" 2>/dev/null >/dev/null; then
+      if sudo -u "#$user_id" env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+          dbus-send --session --print-reply --dest=org.keepassxc.KeePassXC.MainWindow \
+          /keepassxc org.keepassxc.KeePassXC.MainWindow.openDatabase "string:$kdbx_file" \
+          "string:$passwd" "string:$key_file" 2>/dev/null >/dev/null; then
         break
       fi
       sleep 1
