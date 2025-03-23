@@ -1,0 +1,120 @@
+#!/bin/bash
+
+set -e
+set -o pipefail
+
+# ensure that only system paths are searched for all the utilities
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin"
+
+SCRIPT="$(basename "${BASH_SOURCE[0]}")"
+
+function usage() {
+  echo
+  echo "Usage: $SCRIPT <USER> <KDBX>"
+  echo
+  echo "Setup keepassxc-unlock password and key for a specified user's KDBX database"
+  echo
+  echo "Arguments:"
+  echo "  <USER>          name of the user who owns the database"
+  echo "  <KDBX>          path to the KDBX database (can be relative or absolute)"
+  echo
+}
+
+if [ "$#" -ne 2 ]; then
+  usage
+  exit 1
+fi
+
+if [ $(id -u) -ne 0 ]; then
+  echo This utility must be run as root
+  exit 1
+fi
+
+user_id=$(id -u "$1")
+[ -z "$user_id" ] && exit 1
+
+kdbx_file=$(realpath "$2")
+if [ ! -f "$kdbx_file" ]; then
+  echo "KDBX database '$kdbx_file' does not exist or is not a file"
+  exit 1
+fi
+
+key_type="host+tpm2"
+echo Checking TPM2 support
+if ! systemd-creds has-tpm2; then
+  echo "System lacks TPM2 support. If only libraries are missing in the output above"
+  echo "then install the required TSS libraries and try again. Installing tpm2-tools"
+  echo "package should install all the required libraries."
+  echo
+  echo "WARNING: continuing will weaken security especially if the root filesystem is not encrypted"
+  read -r -p "Continue without TPM2 support? (y/N) " resp
+  if [ "$resp" != y -a "$resp" != Y ]; then
+    exit 0
+  fi
+  key_type=host
+fi
+if [ ! -f /var/lib/systemd/credential.secret ]; then
+  systemd-creds setup
+fi
+
+conf_dir=/etc/keepassxc-unlock
+user_conf_dir=$conf_dir/$user_id
+conf_file_prefix=$(echo -n "$kdbx_file" | shasum -a 1 - | cut -d' ' -f1)
+conf_file=$user_conf_dir/$conf_file_prefix.conf
+max_tries=3
+
+mkdir -p $user_conf_dir
+chmod 0700 $conf_dir $user_conf_dir
+
+if [ -f $conf_file ]; then
+  read -r -p "Overwrite existing configuration in $user_conf_dir? (y/N) " resp
+  if [ "$resp" != y -a "$resp" != Y ]; then
+    exit 0
+  fi
+fi
+
+for i in $(seq $max_tries); do
+  read -r -e -p "Enter the key file for the database (empty for none): " key_file
+  # sanitize key_file then expand using eval
+  key_file="$(printf "%q" "$key_file")"
+  key_file="${key_file/\\\~/\~}"  # change leading \~ to ~
+  eval key_file="$key_file"
+  if [ -z "$key_file" -o -f "$key_file" ]; then
+    break
+  else
+    echo "File '$key_file' does not exist or is not a file"
+    if [ $i -eq $max_tries ]; then
+      echo "Maximum number of tries exhausted"
+      exit 1
+    fi
+  fi
+done
+
+for i in $(seq $max_tries); do
+  read -r -s -p "Enter the password for the database: " passwd
+  echo
+  read -r -s -p "Type the password again: " passwd2
+  echo
+  if [ "$passwd" != "$passwd2" ]; then
+    echo Passwords do not match
+    if [ $i -eq $max_tries ]; then
+      echo "Maximum number of tries exhausted"
+      exit 1
+    fi
+  else
+    break
+  fi
+done
+
+echo Writing the parameters and encrypted password to the configuration file
+echo -n "" > $conf_file
+chmod 0600 $conf_file
+echo "DB=$kdbx_file" >> $conf_file
+echo "KEY=$key_file" >> $conf_file
+echo "PASSWORD:" >> $conf_file
+echo -n "$passwd" | systemd-creds --name=$conf_file_prefix --with-key="$key_type" encrypt - - >> $conf_file
+chmod 0400 $conf_file
+
+echo
+echo Done.
+exit 0
