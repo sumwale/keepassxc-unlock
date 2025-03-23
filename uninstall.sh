@@ -17,8 +17,9 @@ export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin:$PATH"
 
 echo
 echo -en "${fg_orange}Uninstall pam-keepassxc from /usr/local? (y/N) $fg_reset"
-read -r resp
-
+set +e
+read -r resp < /dev/tty
+set -e
 if [ "$resp" != y -a "$resp" != Y ]; then
   exit 1
 fi
@@ -48,7 +49,9 @@ if [ -d $config_dir ]; then
   echo -n "Be warned that if you remove it, then all the KeePassXC database passwords registered"
   echo " for all users will be lost and you will have to recover them from memory or elsewhere."
   echo -en "${fg_orange}Really remove /etc/keepassxc-unlock? (type YES in capitals) $fg_reset"
-  read -r resp
+  set +e
+  read -r resp < /dev/tty
+  set -e
   if [ "$resp" = YES ]; then
     echo -e "${fg_orange}Removing /etc/keepassxc-unlock$fg_reset"
     sudo rm -rf /etc/keepassxc-unlock

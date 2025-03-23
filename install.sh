@@ -32,7 +32,9 @@ fi
 echo
 echo -e "${fg_orange}This will install the latest version of pam-keepassxc in /usr/local"
 echo -en "${fg_cyan}Proceed? (Y/n) $fg_reset"
-read -r resp
+set +e
+read -r resp < /dev/tty
+set -e
 if [ "$resp" = n -o "$resp" = N ]; then
   echo -e "${fg_red}Aborting$fg_reset"
   exit 2
