@@ -39,7 +39,9 @@ trust model of keepassxc.
 
 **How good is the encryption of the passwords?**
 
-It uses the exact same scheme as provided by systemd for securing service credentials.
+It uses the exact same scheme as provided by systemd for securing service credentials
+which is AES256-GCM + SHA256 (see [systemd-creds man page](https://www.man7.org/linux/man-pages//man1/systemd-creds.1.html)
+    for details).
 
 **Now that I have to never enter the passwords, I will likely forget the passwords**
 
