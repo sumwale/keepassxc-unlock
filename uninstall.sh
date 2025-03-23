@@ -7,8 +7,8 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-sbin_files="keepassxc-unlock-setup pam-keepassxc-auth systemd/keepassxc-unlock"
-service_files="systemd/keepassxc-unlock@.service"
+sbin_files="keepassxc-unlock-setup pam-keepassxc-auth keepassxc-unlock"
+service_files="keepassxc-unlock@.service"
 doc_files="README.md LICENSE"
 config_dir=/etc/keepassxc-unlock
 
@@ -26,7 +26,7 @@ fi
 
 echo -e "${fg_orange}Removing executables from /usr/local/sbin$fg_reset"
 for file in $sbin_files; do
-  sudo rm -f /usr/local/sbin/$(basename $file)
+  sudo rm -f /usr/local/sbin/$file
 done
 
 echo -e "${fg_orange}Stopping systemd services and removing the service file$fg_reset"

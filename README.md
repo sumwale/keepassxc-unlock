@@ -29,7 +29,7 @@ authentication by other modules, and the service takes over thereafter watching 
 session events on the system D-BUS and invoking for database unlock (for one or any
     number of registered databases).
 
-- **Doesn't this mean that administrator has full access to all my passwords?**
+**Doesn't this mean that administrator has full access to all my passwords?**
 
 If the root user or root owned processes are not trusted, then all KeePassXC passwords
 are just a gcore+strings command away in any case. That is the root user can dump the
@@ -37,11 +37,11 @@ heap of the keepassxc process and obtain all the passwords in clear text in a ma
 of a few minutes. So the scheme does not require any new assumptions beyond the existing
 trust model of keepassxc.
 
-- **How good is the encryption of the passwords?**
+**How good is the encryption of the passwords?**
 
 It uses the exact same scheme as provided by systemd for securing service credentials.
 
-- **Now that I have to never enter the passwords, I will likely forget the passwords**
+**Now that I have to never enter the passwords, I will likely forget the passwords**
 
 You should absolutely keep a secure copy of the KeePassXC database passwords elsewhere.
 The keys used for encryption are completely device specific and will not work on any
