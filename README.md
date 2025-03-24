@@ -100,7 +100,7 @@ Latest version:
 wget -qO- "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
 ```
 
-Or,
+Or
 
 ```sh
 curl -fsSL "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
@@ -178,5 +178,5 @@ commands to generate D-BUS events to lock the database in the screen locker scri
 A better option will be to generate the proper system D-BUS events for the session
 in the lock script namely toggling the boolean `LockedHint` property in the object
 `/org/freedesktop/login1/session/<session ID>` on the bus `org.freedesktop.login1`.
-This way both KeePassXC and the `keepassxc-unlock` service will be able to lock/unlock
-the databases correctly.
+One way is to use `loginctl lock-session`/`unlock-session`. This way both KeePassXC
+and the `keepassxc-unlock` service will be able to lock/unlock the databases correctly.

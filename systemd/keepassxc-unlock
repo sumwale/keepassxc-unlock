@@ -94,13 +94,16 @@ function select_session() {
       if (!selected_session) {
         if ($1 == "node" && $2 ~ /^.org.freedesktop.login1.session.[0-9_]+$/) {
           session_path = $2
-          session_valid = 0
-        } else if (session_path) {
-          if ($3 == "User" && $5 ~ /^\('$user_id',$/) {
-            session_valid = 1
-          } else if (session_valid && $3 == "Type" && $5 ~ /x11|wayland/) {
-            selected_session = session_path
+          session_valid = 1
+        } else if (session_path && session_valid) {
+          if ($3 == "User" && $5 !~ /^\('$user_id',$/) {
+            session_valid = 0
+          } else if ($3 == "Remote" && $5 == "true") {
+            session_valid = 0
+          } else if ($3 == "Type" && $5 !~ /x11|wayland/) {
+            session_valid = 0
           } else if ($1 == "};") {
+            selected_session = session_path
             session_path = ""
           }
         }
