@@ -32,10 +32,13 @@ session events on the system D-BUS and invoking for database unlock (for one or 
 **Doesn't this mean that administrator has full access to all my passwords?**
 
 If the root user or root owned processes are not trusted, then all KeePassXC passwords
-are just a gcore+strings command away in any case. That is the root user can dump the
+are just a gcore+strings command away in any case. That is, the root user can dump the
 heap of the keepassxc process and obtain all the passwords in clear text in a matter
-of a few minutes. So the scheme does not require any new assumptions beyond the existing
-trust model of keepassxc.
+of a few minutes. Or the root user can override with a patched version of KeePassXC
+that reads and saves the plaintext passwords elsewhere. There are umpteen number of ways
+in which the root user or root owned processes can obtain all the passwords even
+otherwise, so the scheme does not require any new assumptions beyond the existing trust
+model of KeePassXC.
 
 **How good is the encryption of the passwords?**
 
@@ -43,19 +46,19 @@ It uses the exact same scheme as provided by systemd for securing service creden
 which is AES256-GCM + SHA256 (see [systemd-creds man page](https://www.man7.org/linux/man-pages//man1/systemd-creds.1.html)
     for details).
 
-**Now that I have to never enter the passwords, I will likely forget the passwords**
+**Now that I have to never enter the passwords, I will likely forget them**
 
 You should absolutely keep a secure copy of the KeePassXC database passwords elsewhere.
 The keys used for encryption are completely device specific and will not work on any
-other devices, so you cannot rely on a full system backup to re-create the passwords
-in case your device dies or gets stolen.
+other devices, so a full system backup cannot be used to re-create the passwords
+in case the device dies or gets stolen.
 
-If you want to include the passwords as part of your backup then you can run a script
-before your scheduled backup to extract the passwords and encrypt with your GPG key (or
-equivalent). Of course, you will need a secure backup of your GPG private key.
-Let's say you want to decrypt the passwords, then encrypt with your GPG key and store
-the files in `/etc/keepassxc-unlock-backup` that can be included in your system backups.
-The script to do this will look like below (run as root):
+To include the passwords as part of your backup, a script can be executed before the
+scheduled backup to extract the passwords that can be encrypted with your GPG key
+(or equivalent). Of course, a secure backup of this GPG private key will be required.
+Let's say you want to decrypt the passwords, then encrypt with the GPG key and store
+the files in `/etc/keepassxc-unlock-backup` that can be included in the system backups.
+The sh/bash script to do this will look like below (run as root):
 
 ```sh
 backup_base=/etc/keepassxc-unlock-backup
@@ -70,24 +73,23 @@ for dir in /etc/keepassxc-unlock/*; do
   done
 done
 ```
-(substitute `<GPG_ID>` with the GPG ID you will use for encrypting the passwords)
+(substitute `<GPG_ID>` with the GPG ID to use for encrypting the passwords)
 
 An `examples/backup-gpg.sh` script using the above code is present in the repository.
 
-When restoring on a new system, you can decrypt these individual files to help remember
-the passwords and key file paths when running the `keepassxc-unlock-setup` utility on
-the new system.
+When restoring on a new system, run `keepassxc-unlock-setup` afresh and decrypt these
+individual files to help remember the passwords and key file paths.
 
 
 ## WARNING
 
 This initial implementation just uses bash scripts and can briefly expose the password
-in the command-line of `dbus-send` command. However, the implementation itself is quite
+in the command-line of a `dbus-send` command. However, the implementation itself is quite
 well tested, so go ahead and start using it if you are not worried about someone or
 a malware grabbing the password in that brief window.
 
-The upcoming version in C (or maybe Rust?) will fix this known issue with the current
-version of the scripts.
+The upcoming version in C/C++ will fix this known issue with the current version of
+the scripts.
 
 
 ## Installation
@@ -108,22 +110,34 @@ This will install the binaries in `/usr/local/sbin` and a systemd service file i
 `/etc/systemd/system`. The LICENSE and doc files are also installed in
 `/usr/local/share/doc/pam-keepassxc`.
 
-If you wish to uninstall, then change `install.sh` in the above commands to `uninstall.sh`.
+To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
 
 
 ## Configuration
 
-The comments shown at the end the install script mention the required configuration.
+The comments output at the end the install script mention the required configuration.
 
 First register the KeePassXC databases to be unlocked automatically by running the
-`keepassxc-unlock-setup` script. This has to be run as root user and takes then name
+`keepassxc-unlock-setup` script. This has to be run as root user and takes the name
 of the user and the path to the KDBX database as two arguments. It will then prompt
 the user to enter the key file (if any), and the password.
 
 Run this script for all the databases that need to be automatically unlocked for all
-the users.
+the users. An example run can look like this:
 
-Then add the line below to your display manager's PAM configuration after all other `auth` lines:
+```sh
+sudo keepassxc-unlock-setup mike ~mike/keepassxc/passwords.kdbx
+...
+Enter the key file for the database (empty for none): <you can use TAB completion here>
+Enter the password for the database: 
+Type the password again: 
+...
+
+```
+
+The script will warn if TPM2 support cannot be detected and provide helpful suggestions.
+Then add the line below to the display manager's PAM configuration after all other
+`auth` lines:
 
 ```
 -auth   optional        pam_exec.so /usr/local/sbin/pam-keepassxc-auth
@@ -143,7 +157,7 @@ the above change:
 
 ```
 
-That's it. When you logout and then login back, all the KeePassXC databases registered
+That's it. Just logout then login again, and all the KeePassXC databases registered
 above will be automatically unlocked, and will continue being unlocked after a screen
 lock/unlock, a sleep/wakeup or other such events that may cause KeePassXC to lock
 automatically.
@@ -154,14 +168,15 @@ Normally the screen lock programs shipped with desktop environments will generat
 the requisite system D-BUS events that the service is monitoring and will thus be
 able to unlock the databases as expected.
 
-However, if you are using a custom screen lock program that does not generate those
-events, then KeePassXC itself will normally not be able to automatically lock the
-databases when the screen is locked. You will have to add explicit commands to generate
-D-BUS events to lock the database in the screen locker script (e.g. using qdbus API as
-    shown in KeePassXC wiki).
+However, if a custom screen lock program is being used that does not generate those
+events, then KeePassXC itself will not be able to automatically lock the databases
+when the screen is locked. For KeePassXC to lock the databases in such a case, explicit
+commands to generate D-BUS events to lock the database in the screen locker script
+(e.g. using KeePassXC dbus API as shown in the KeePassXC wiki). But this will not help
+`keepassxc-unlock` service to unlock the databases automatically on screen unlock.
 
-A better option will be to generate the proper system D-BUS events instead for your
-session in the script namely the boolean `LockedHint` property in the object
+A better option will be to generate the proper system D-BUS events for the session
+in the lock script namely toggling the boolean `LockedHint` property in the object
 `/org/freedesktop/login1/session/<session ID>` on the bus `org.freedesktop.login1`.
 This way both KeePassXC and the `keepassxc-unlock` service will be able to lock/unlock
 the databases correctly.
