@@ -69,7 +69,7 @@ function do_unlock() {
       if [ "$(shasum -a 512 $kp_exe | awk '{ print $1 }')" != "$expected_sha512" ]; then
         kp_exe_full=$(realpath $kp_exe)
         >&2 echo -e "\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID $kp_pid EXE $kp_exe_full)\033[00m"
-        notify_msg=$(echo -en "If KeePassXC has been updated, then run keepassxc-unlock-setup " \
+        notify_msg=$(echo -en "If KeePassXC has been updated, then run 'sudo keepassxc-unlock-setup ...'" \
           "for one of the KDBX databases.\nOtherwise this could be an unknown process snooping " \
           "on D-Bus.\nThe offending process ID is $kp_pid having executable $kp_exe_full.")
         $do_sudo notify-send -i system-lock-screen -u critical -t 0 "Checksum mismatch in keepassxc" "$notify_msg"

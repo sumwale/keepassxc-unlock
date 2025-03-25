@@ -64,55 +64,92 @@ fi
 
 conf_dir=/etc/keepassxc-unlock
 user_conf_dir=$conf_dir/$user_id
-conf_file_prefix=$(echo -n "$kdbx_file" | shasum -a 1 - | cut -d' ' -f1)
-conf_file=$user_conf_dir/$conf_file_prefix.conf
+conf_name=$(echo -n "$kdbx_file" | shasum -a 1 - | cut -d' ' -f1)
+conf_file=$user_conf_dir/$conf_name.conf
 kp_state=$user_conf_dir/keepassxc.state
 max_tries=3
+passwd=
+key_file=
 
 mkdir -p $user_conf_dir
 chmod 0700 $conf_dir $user_conf_dir
 
 if [ -f $conf_file ]; then
-  read -r -p "Overwrite existing configuration in $user_conf_dir? (y/N) " resp
-  if [ "$resp" != y -a "$resp" != Y ]; then
-    exit 0
+  enc_pwd=
+  while read -r line; do
+    case "$line" in
+      DB=*)
+        existing_kdbx_file="${line#DB=}"
+        ;;
+      KEY=*)
+        existing_key_file="${line#KEY=}"
+        ;;
+      PASSWORD:)
+        ;;
+      *)
+        enc_pwd="$enc_pwd$line\n"
+        ;;
+    esac
+  done < $conf_file
+  if [ "$existing_kdbx_file" = "$kdbx_file" -a -n "$enc_pwd" ]; then
+    read -r -p "Overwrite existing configuration for $kdbx_file? (y/N) " resp
+    if [ "$resp" != y -a "$resp" != Y ]; then
+      passwd="$(echo -ne "$enc_pwd" | systemd-creds --name=$conf_name decrypt - -)"
+      key_file="$existing_key_file"
+      read -r -p "Display current configuration with password in clear text? (y/N) " resp
+      if [ "$resp" = y -o "$resp" = Y ]; then
+        echo
+        echo "Database file:	$kdbx_file"
+        echo "Password:	$passwd"
+        echo "Key file:	$key_file"
+      fi
+      # continue and update the $kp_state file in any case
+    fi
   fi
 fi
 
-for i in $(seq $max_tries); do
-  read -r -s -p "Enter the password for the database: " passwd
-  echo
-  read -r -s -p "Type the password again: " passwd2
-  echo
-  if [ "$passwd" != "$passwd2" ]; then
-    echo Passwords do not match
-    if [ $i -eq $max_tries ]; then
-      echo "Maximum number of tries exhausted"
-      exit 5
+if [ -z "$passwd" ]; then
+  for i in $(seq $max_tries); do
+    read -r -s -p "Enter the password for the database: " passwd
+    echo
+    read -r -s -p "Type the password again: " passwd2
+    echo
+    if [ "$passwd" != "$passwd2" ]; then
+      echo Passwords do not match
+      if [ $i -eq $max_tries ]; then
+        echo "Maximum number of tries exhausted"
+        exit 5
+      fi
+    else
+      break
     fi
-  else
-    break
-  fi
-done
+  done
 
-for i in $(seq $max_tries); do
-  read -r -e -p "Enter the key file for the database (empty for none): " key_file
-  # sanitize key_file then expand using eval
-  key_file="$(printf "%q" "$key_file")"
-  key_file="${key_file/\\\~/\~}"  # change leading \~ to ~
-  eval key_file="$key_file"
-  if [ -z "$key_file" -o -f "$key_file" ]; then
-    break
-  else
-    echo "File '$key_file' does not exist or is not a file"
-    if [ $i -eq $max_tries ]; then
-      echo "Maximum number of tries exhausted"
-      exit 5
+  for i in $(seq $max_tries); do
+    read -r -e -p "Enter the key file for the database (empty for none): " key_file
+    # sanitize key_file then expand using eval
+    key_file="$(printf "%q" "$key_file")"
+    key_file="${key_file/\\\~/\~}"  # change leading \~ to ~
+    eval key_file="$key_file"
+    if [ -z "$key_file" ]; then
+      break
+    elif [ -f "$key_file" ]; then
+      key_file=$(realpath "$key_file")
+      break
+    else
+      echo "File '$key_file' does not exist or is not a file"
+      if [ $i -eq $max_tries ]; then
+        echo "Maximum number of tries exhausted"
+        exit 5
+      fi
     fi
-  fi
-done
+  done
+fi
 
+echo
 echo Verifying the given parameters, please ensure KeePassXC is running and lock this database
+echo -n "Press <Enter> to continue once ready..."
+read -r dummy
 user_id=1000
 DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$user_id/bus"
 do_sudo="sudo -u #$user_id env DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
@@ -120,20 +157,23 @@ for i in $(seq 5); do
   if kp_pid=$($do_sudo dbus-send --session --print-reply --dest=org.freedesktop.DBus / \
       org.freedesktop.DBus.GetConnectionUnixProcessID \
       string:org.keepassxc.KeePassXC.MainWindow 2>/dev/null | tail -n1 | awk '{ print $2 }'); then
+    kp_exe=/proc/$kp_pid/exe
+    kp_exe_full=$(realpath $kp_exe)
+    echo
+    echo "Will try unlocking the database for process with ID $kp_pid, executable $kp_exe_full"
+    echo "Hit <Enter> to send the password and key file to this process, else press <Ctrl-c> to abort now"
+    read -r dummy
     if $do_sudo dbus-send --session --print-reply --dest=org.keepassxc.KeePassXC.MainWindow \
         /keepassxc org.keepassxc.KeePassXC.MainWindow.openDatabase "string:$kdbx_file" \
         "string:$passwd" "string:$key_file" 2>/dev/null >/dev/null; then
       echo -n "Was the database unlocked successfully? (y/N) "
       read -r resp
       if [ "$resp" = y -o "$resp" = Y ]; then
-        kp_exe=/proc/$kp_pid/exe
-        echo "Registering KeePassXC with PID $kp_pid (executable $(realpath $kp_exe))"
-        echo "If the above does not look correct, then hit <Ctrl-c> to abort now else hit <Enter>"
-        read dummy
         kp_exe_sha512=$(shasum -a 512 $kp_exe | awk '{ print $1 }')
         break
       else
         echo "Some error with the given parameters, please try again"
+        exit 6
       fi
     fi
   else
@@ -143,7 +183,7 @@ for i in $(seq 5); do
       exit 6
     else
       echo "hit <Enter> to retry"
-      read dummy
+      read -r dummy
     fi
   fi
 done
@@ -158,7 +198,7 @@ chmod 0600 $conf_file
 echo "DB=$kdbx_file" >> $conf_file
 echo "KEY=$key_file" >> $conf_file
 echo "PASSWORD:" >> $conf_file
-echo -n "$passwd" | systemd-creds --name=$conf_file_prefix --with-key="$key_type" encrypt - - >> $conf_file
+echo -n "$passwd" | systemd-creds --name=$conf_name --with-key="$key_type" encrypt - - >> $conf_file
 echo "$kp_exe_sha512" > $kp_state
 chmod 0400 $conf_file $kp_state
 
