@@ -139,7 +139,7 @@ sudo keepassxc-unlock-setup mike ~mike/keepassxc/passwords.kdbx
 ...
 Enter the password for the database: 
 Type the password again: 
-Enter the key file for the database (empty for none): <TAB completion works here>
+Enter the key file for the database (empty for none, use <TAB> for file name completion): 
 ...
 
 ```

@@ -126,7 +126,7 @@ if [ -z "$passwd" ]; then
   done
 
   for i in $(seq $max_tries); do
-    read -r -e -p "Enter the key file for the database (empty for none): " key_file
+    read -r -e -p "Enter the key file for the database (empty for none, use <TAB> for file name completion): " key_file
     # sanitize key_file then expand using eval
     key_file="$(printf "%q" "$key_file")"
     key_file="${key_file/\\\~/\~}"  # change leading \~ to ~
@@ -148,8 +148,6 @@ fi
 
 echo
 echo Verifying the given parameters, please ensure KeePassXC is running and lock this database
-echo -n "Press <Enter> to continue once ready..."
-read -r dummy
 user_id=1000
 DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$user_id/bus"
 do_sudo="sudo -u #$user_id env DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
