@@ -43,7 +43,7 @@ function do_unlock() {
   user_conf_dir=$2
   selected_session=$3
   wait_secs=$4
-  kp_state=$user_conf_dir/keepassxc.state
+  kp_sha512_file=$user_conf_dir/keepassxc.sha512
 
   # last minute check to skip unlock if LockedHint is true
   if gdbus call -y -d org.freedesktop.login1 -o $selected_session -m \
@@ -60,12 +60,12 @@ function do_unlock() {
     if kp_pid=$($do_sudo dbus-send --session --print-reply --dest=org.freedesktop.DBus / \
         org.freedesktop.DBus.GetConnectionUnixProcessID \
         string:org.keepassxc.KeePassXC.MainWindow 2>/dev/null | tail -n1 | awk '{ print $2 }'); then
-      if [ ! -f $kp_state ]; then
-        echo "Skipping unlock due to missing keepassxc.state -- run keepassxc-unlock-setup"
+      if [ ! -f $kp_sha512_file ]; then
+        echo "Skipping unlock due to missing keepassxc.sha512 -- run keepassxc-unlock-setup"
         return 0
       fi
       kp_exe=/proc/$kp_pid/exe
-      expected_sha512=$(cat $kp_state)
+      expected_sha512=$(cat $kp_sha512_file)
       if [ "$(shasum -a 512 $kp_exe | awk '{ print $1 }')" != "$expected_sha512" ]; then
         kp_exe_full=$(realpath $kp_exe)
         >&2 echo -e "\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID $kp_pid EXE $kp_exe_full)\033[00m"

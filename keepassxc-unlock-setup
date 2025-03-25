@@ -66,7 +66,7 @@ conf_dir=/etc/keepassxc-unlock
 user_conf_dir=$conf_dir/$user_id
 conf_name=$(echo -n "$kdbx_file" | shasum -a 1 - | cut -d' ' -f1)
 conf_file=$user_conf_dir/$conf_name.conf
-kp_state=$user_conf_dir/keepassxc.state
+kp_sha512_file=$user_conf_dir/keepassxc.sha512
 max_tries=3
 passwd=
 key_file=
@@ -103,7 +103,7 @@ if [ -f $conf_file ]; then
         echo "Password:	$passwd"
         echo "Key file:	$key_file"
       fi
-      # continue and update the $kp_state file in any case
+      # continue and update the $kp_sha512_file file in any case
     fi
   fi
 fi
@@ -197,8 +197,8 @@ echo "DB=$kdbx_file" >> $conf_file
 echo "KEY=$key_file" >> $conf_file
 echo "PASSWORD:" >> $conf_file
 echo -n "$passwd" | systemd-creds --name=$conf_name --with-key="$key_type" encrypt - - >> $conf_file
-echo "$kp_exe_sha512" > $kp_state
-chmod 0400 $conf_file $kp_state
+echo "$kp_exe_sha512" > $kp_sha512_file
+chmod 0400 $conf_file $kp_sha512_file
 
 echo
 echo Done.
