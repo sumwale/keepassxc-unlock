@@ -31,17 +31,17 @@ if [ $(id -u) -ne 0 ]; then
 fi
 
 user_id=$(id -u "$1")
-[ -z "$user_id" ] && exit 1
+[ -z "$user_id" ] && exit 2
 
 kdbx_file=$(realpath "$2")
 if [ ! -f "$kdbx_file" ]; then
   echo "KDBX database '$kdbx_file' does not exist or is not a file"
-  exit 1
+  exit 3
 fi
 
 if ! type -p systemd-creds >/dev/null; then
   echo "systemd-creds absent, cannot proceed; minimum version of systemd required is 250"
-  exit 1
+  exit 4
 fi
 
 key_type="host+tpm2"
@@ -66,6 +66,7 @@ conf_dir=/etc/keepassxc-unlock
 user_conf_dir=$conf_dir/$user_id
 conf_file_prefix=$(echo -n "$kdbx_file" | shasum -a 1 - | cut -d' ' -f1)
 conf_file=$user_conf_dir/$conf_file_prefix.conf
+kp_state=$user_conf_dir/keepassxc.state
 max_tries=3
 
 mkdir -p $user_conf_dir
@@ -79,6 +80,22 @@ if [ -f $conf_file ]; then
 fi
 
 for i in $(seq $max_tries); do
+  read -r -s -p "Enter the password for the database: " passwd
+  echo
+  read -r -s -p "Type the password again: " passwd2
+  echo
+  if [ "$passwd" != "$passwd2" ]; then
+    echo Passwords do not match
+    if [ $i -eq $max_tries ]; then
+      echo "Maximum number of tries exhausted"
+      exit 5
+    fi
+  else
+    break
+  fi
+done
+
+for i in $(seq $max_tries); do
   read -r -e -p "Enter the key file for the database (empty for none): " key_file
   # sanitize key_file then expand using eval
   key_file="$(printf "%q" "$key_file")"
@@ -90,35 +107,60 @@ for i in $(seq $max_tries); do
     echo "File '$key_file' does not exist or is not a file"
     if [ $i -eq $max_tries ]; then
       echo "Maximum number of tries exhausted"
-      exit 1
+      exit 5
     fi
   fi
 done
 
-for i in $(seq $max_tries); do
-  read -r -s -p "Enter the password for the database: " passwd
-  echo
-  read -r -s -p "Type the password again: " passwd2
-  echo
-  if [ "$passwd" != "$passwd2" ]; then
-    echo Passwords do not match
-    if [ $i -eq $max_tries ]; then
-      echo "Maximum number of tries exhausted"
-      exit 1
+echo Verifying the given parameters, please ensure KeePassXC is running and lock this database
+user_id=1000
+DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$user_id/bus"
+do_sudo="sudo -u #$user_id env DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+for i in $(seq 5); do
+  if kp_pid=$($do_sudo dbus-send --session --print-reply --dest=org.freedesktop.DBus / \
+      org.freedesktop.DBus.GetConnectionUnixProcessID \
+      string:org.keepassxc.KeePassXC.MainWindow 2>/dev/null | tail -n1 | awk '{ print $2 }'); then
+    if $do_sudo dbus-send --session --print-reply --dest=org.keepassxc.KeePassXC.MainWindow \
+        /keepassxc org.keepassxc.KeePassXC.MainWindow.openDatabase "string:$kdbx_file" \
+        "string:$passwd" "string:$key_file" 2>/dev/null >/dev/null; then
+      echo -n "Was the database unlocked successfully? (y/N) "
+      read -r resp
+      if [ "$resp" = y -o "$resp" = Y ]; then
+        kp_exe=/proc/$kp_pid/exe
+        echo "Registering KeePassXC with PID $kp_pid (executable $(realpath $kp_exe))"
+        echo "If the above does not look correct, then hit <Ctrl-c> to abort now else hit <Enter>"
+        read dummy
+        kp_exe_sha512=$(shasum -a 512 $kp_exe | awk '{ print $1 }')
+        break
+      else
+        echo "Some error with the given parameters, please try again"
+      fi
     fi
   else
-    break
+    echo -n "Could not communicate with a running instance of KeePassXC -- "
+    if [ $i -eq 5 ]; then
+      echo exiting, please try again
+      exit 6
+    else
+      echo "hit <Enter> to retry"
+      read dummy
+    fi
   fi
 done
+if [ -z "$kp_exe_sha512" ]; then
+  echo "Unable to register a valid instance of KeePassXC, exiting"
+  exit 7
+fi
 
-echo Writing the parameters and encrypted password to the configuration file
+echo Writing the parameters and encrypted password to the configuration files
 echo -n "" > $conf_file
 chmod 0600 $conf_file
 echo "DB=$kdbx_file" >> $conf_file
 echo "KEY=$key_file" >> $conf_file
 echo "PASSWORD:" >> $conf_file
 echo -n "$passwd" | systemd-creds --name=$conf_file_prefix --with-key="$key_type" encrypt - - >> $conf_file
-chmod 0400 $conf_file
+echo "$kp_exe_sha512" > $kp_state
+chmod 0400 $conf_file $kp_state
 
 echo
 echo Done.

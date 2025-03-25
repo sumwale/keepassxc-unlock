@@ -22,11 +22,13 @@ decryption facility using a combination of locally stored system key and a key i
 
 The second important idea is that all the database unlock operations are carried out by
 a root owned systemd service itself and not by any other user process that can bring
-about needless complications on the trustworthiness of the other process.
+about needless complications on the trustworthiness of the other process. In addition,
+the SHA512 checksum of the keepassxc executable is verified before making the unlock
+D-Bus calls to verify that no other process is listening on.
 
 The PAM module itself just starts this user-specific systemd service after a successful
 authentication by other modules, and the service takes over thereafter watching for the
-session events on the system D-BUS and invoking for database unlock (for one or any
+session events on the system D-Bus and invoking for database unlock (for one or any
     number of registered databases).
 
 **Doesn't this mean that administrator has full access to all my passwords?**
@@ -46,6 +48,13 @@ It uses the exact same scheme as provided by systemd for securing service creden
 which is AES256-GCM + SHA256 (see [systemd-creds man page](https://www.man7.org/linux/man-pages//man1/systemd-creds.1.html)
     for details).
 
+**Will I need to run keepassxc-unlock-setup everytime after an upgrade to KeePassXC?**
+
+It will need to be run for at least one of the user's databases to verify and register
+the checksum of the new keepassxc executable. This can be done automatically in future
+if this gets integrated into KeePassXC distribution (except if it is running inside
+    a containerized environment that cannot update the host's system files).
+
 **Now that I have to never enter the passwords, I will likely forget them**
 
 You should absolutely keep a secure copy of the KeePassXC database passwords elsewhere.
@@ -53,7 +62,7 @@ The keys used for encryption are completely device specific and will not work on
 other devices, so a full system backup cannot be used to re-create the passwords
 in case the device dies or gets stolen.
 
-To include the passwords as part of your backup, a script can be executed before the
+To include the passwords as part of a backup, a script can be executed before the
 scheduled backup to extract the passwords that can be encrypted with your GPG key
 (or equivalent). Of course, a secure backup of this GPG private key will be required.
 Let's say you want to decrypt the passwords, then encrypt with the GPG key and store
@@ -128,14 +137,16 @@ the users. An example run can look like this:
 ```sh
 sudo keepassxc-unlock-setup mike ~mike/keepassxc/passwords.kdbx
 ...
-Enter the key file for the database (empty for none): <you can use TAB completion here>
 Enter the password for the database: 
 Type the password again: 
+Enter the key file for the database (empty for none): <TAB completion works here>
 ...
 
 ```
 
 The script will warn if TPM2 support cannot be detected and provide helpful suggestions.
+Further it will test these parameters for user confirmation and also register the
+keepassxc binary SHA512 checksum which is verified later before auto-unlocking.
 Then add the line below to the display manager's PAM configuration after all other
 `auth` lines:
 
@@ -165,17 +176,17 @@ automatically.
 ### Using custom screen lockers
 
 Normally the screen lock programs shipped with desktop environments will generate
-the requisite system D-BUS events that the service is monitoring and will thus be
+the requisite system D-Bus events that the service is monitoring and will thus be
 able to unlock the databases as expected.
 
 However, if a custom screen lock program is being used that does not generate those
 events, then KeePassXC itself will not be able to automatically lock the databases
 when the screen is locked. For KeePassXC to lock the databases in such a case, explicit
-commands to generate D-BUS events to lock the database in the screen locker script
+commands to generate D-Bus events to lock the database in the screen locker script
 (e.g. using KeePassXC dbus API as shown in the KeePassXC wiki). But this will not help
 `keepassxc-unlock` service to unlock the databases automatically on screen unlock.
 
-A better option will be to generate the proper system D-BUS events for the session
+A better option will be to generate the proper system D-Bus events for the session
 in the lock script namely toggling the boolean `LockedHint` property in the object
 `/org/freedesktop/login1/session/<session ID>` on the bus `org.freedesktop.login1`.
 One way is to use `loginctl lock-session`/`unlock-session`. This way both KeePassXC

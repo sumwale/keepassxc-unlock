@@ -43,8 +43,9 @@ function do_unlock() {
   user_conf_dir=$2
   selected_session=$3
   wait_secs=$4
+  kp_state=$user_conf_dir/keepassxc.state
 
-  # skip unlock if LockedHint is true
+  # last minute check to skip unlock if LockedHint is true
   if gdbus call -y -d org.freedesktop.login1 -o $selected_session -m \
       org.freedesktop.DBus.Properties.Get org.freedesktop.login1.Session LockedHint | \
       grep -qw true; then
@@ -53,7 +54,32 @@ function do_unlock() {
   fi
 
   DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$user_id/bus"
-  for conf_file in $(compgen -G "$user_conf_dir/*.conf"); do
+  do_sudo="sudo -u #$user_id env DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+  for i in $(seq $wait_secs); do
+    # check the process accepting the KeePassXC D-Bus messages and verify its checksum
+    if kp_pid=$($do_sudo dbus-send --session --print-reply --dest=org.freedesktop.DBus / \
+        org.freedesktop.DBus.GetConnectionUnixProcessID \
+        string:org.keepassxc.KeePassXC.MainWindow 2>/dev/null | tail -n1 | awk '{ print $2 }'); then
+      if [ ! -f $kp_state ]; then
+        echo "Skipping unlock due to missing keepassxc.state -- run keepassxc-unlock-setup"
+        return 0
+      fi
+      kp_exe=/proc/$kp_pid/exe
+      expected_sha512=$(cat $kp_state)
+      if [ "$(shasum -a 512 $kp_exe | awk '{ print $1 }')" != "$expected_sha512" ]; then
+        kp_exe_full=$(realpath $kp_exe)
+        >&2 echo -e "\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID $kp_pid EXE $kp_exe_full)\033[00m"
+        notify_msg=$(echo -en "If KeePassXC has been updated, then run keepassxc-unlock-setup " \
+          "for one of the KDBX databases.\nOtherwise this could be an unknown process snooping " \
+          "on D-Bus.\nThe offending process ID is $kp_pid having executable $kp_exe_full.")
+        $do_sudo notify-send -i system-lock-screen -u critical -t 0 "Checksum mismatch in keepassxc" "$notify_msg"
+        return 0
+      fi
+      break
+    fi
+    sleep 1
+  done
+  for conf_file in "$user_conf_dir"/*.conf; do
     conf_name=$(basename "$conf_file" .conf)
     enc_pwd=
     while read -r line; do
@@ -71,17 +97,13 @@ function do_unlock() {
           ;;
       esac
     done < $conf_file
-    passwd=$(echo -ne "$enc_pwd" | systemd-creds --name=$conf_name decrypt - -)
-    for i in $(seq $wait_secs); do
-      if sudo -u "#$user_id" env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
-          dbus-send --session --print-reply --dest=org.keepassxc.KeePassXC.MainWindow \
-          /keepassxc org.keepassxc.KeePassXC.MainWindow.openDatabase "string:$kdbx_file" \
-          "string:$passwd" "string:$key_file" 2>/dev/null >/dev/null; then
-        break
-      fi
-      sleep 1
-    done
-    passwd=
+    if ! $do_sudo dbus-send --session --print-reply --dest=org.keepassxc.KeePassXC.MainWindow \
+        /keepassxc org.keepassxc.KeePassXC.MainWindow.openDatabase "string:$kdbx_file" \
+        "string:$(echo -ne "$enc_pwd" | systemd-creds --name=$conf_name decrypt - -)" \
+        "string:$key_file" 2>/dev/null >/dev/null; then
+      echo "Failed to connect to KeePassXC for unlock of $kdbx_file"
+      return 0
+    fi
     enc_pwd=
   done
 }
