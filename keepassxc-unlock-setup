@@ -197,7 +197,7 @@ echo "DB=$kdbx_file" >> $conf_file
 echo "KEY=$key_file" >> $conf_file
 echo "PASSWORD:" >> $conf_file
 echo -n "$passwd" | systemd-creds --name=$conf_name --with-key="$key_type" encrypt - - >> $conf_file
-echo "$kp_exe_sha512" > $kp_sha512_file
+echo -n "$kp_exe_sha512" > $kp_sha512_file
 chmod 0400 $conf_file $kp_sha512_file
 
 echo

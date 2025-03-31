@@ -124,6 +124,8 @@ function select_session() {
             session_valid = 0
           } else if ($3 == "Type" && $5 !~ /x11|wayland/) {
             session_valid = 0
+          } else if ($3 == "State" && $5 !~ /active/) {
+            session_valid = 0
           } else if ($1 == "};") {
             selected_session = session_path
             session_path = ""

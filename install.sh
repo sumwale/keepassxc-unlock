@@ -8,20 +8,25 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-sbin_files="keepassxc-unlock-setup pam-keepassxc-auth systemd/keepassxc-unlock"
+sbin_files="keepassxc-unlock-setup pam-keepassxc-auth"
+musl_suffix="-$(uname -m)-static"
+musl_files="keepassxc-unlock$musl_suffix"
+src_files="systemd/keepassxc-unlock.c systemd/Makefile"
+src_out_files="keepassxc-unlock"
 service_files="systemd/keepassxc-unlock@.service"
 doc_files="README.md LICENSE"
 base_url="https://github.com/sumwale/pam-keepassxc/blob/main"
+base_release_url="https://github.com/sumwale/pam-keepassxc/releases/latest/download"
 
 # ensure that system PATHs are always searched first
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin:$PATH"
 
-if type -p wget >/dev/null; then
-  get_cmd="wget -q -O"
-elif type -p curl >/dev/null; then
+if type -p curl >/dev/null; then
   get_cmd="curl -fsSL -o"
+elif type -p wget >/dev/null; then
+  get_cmd="wget -q -O"
 else
-  echo -e "${fg_red}Neither wget nor curl found!$fg_reset"
+  echo -e "${fg_red}Neither curl nor wget found!$fg_reset"
   exit 1
 fi
 if ! type -p systemctl >/dev/null; then
@@ -48,6 +53,20 @@ echo -e "${fg_orange}Fetching executables and installing in /usr/local/sbin$fg_r
 for file in $sbin_files; do
   $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
 done
+if [ "$1" = "--build" ]; then
+  echo -e "${fg_cyan}Building from source...$fg_reset"
+  for file in $src_files; do
+    $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
+  done
+  make -C $tmp_dir
+  for file in $src_files; do
+    rm -f $tmp_dir/$(basename $file)
+  done
+else
+  for file in $musl_files; do
+    $get_cmd $tmp_dir/$(echo $file | sed "s/$musl_suffix//") "$base_release_url/$file"
+  done
+fi
 sudo install -t /usr/local/sbin -m 0755 -o root -g root $tmp_dir/*
 rm -f $tmp_dir/*
 

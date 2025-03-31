@@ -90,34 +90,33 @@ When restoring on a new system, run `keepassxc-unlock-setup` afresh and decrypt 
 individual files to help remember the passwords and key file paths.
 
 
-## WARNING
-
-This initial implementation just uses bash scripts and can briefly expose the password
-in the command-line of a `dbus-send` command. However, the implementation itself is quite
-well tested, so go ahead and start using it if you are not worried about someone or
-a malware grabbing the password in that brief window.
-
-The upcoming version in C/C++ will fix this known issue with the current version of
-the scripts.
-
-
 ## Installation
 
 Latest version:
 
 ```sh
-wget -qO- "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
+curl -fsSL "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
 ```
 
-Or
+OR
 
 ```sh
-curl -fsSL "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
+wget -qO- "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
 ```
 
 This will install the binaries in `/usr/local/sbin` and a systemd service file in
 `/etc/systemd/system`. The LICENSE and doc files are also installed in
 `/usr/local/share/doc/pam-keepassxc`.
+
+The main systemd service binary is statically linked for best compability and will work
+on all Linux distributions.
+
+If you prefer building the binary from source, then a dynamically linked version can be
+built and installed by passing `--build` option at the end of `bash` in the commands above.
+This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `openssl`.
+For example for Debian/Ubuntu based systems install these dependencies with:
+`sudo apt install build-essential libglib2.0-dev libssl-dev` or on Fedora/RHEL based
+systems with: `sudo dnf install gcc make glib2-devel openssl-devel`.
 
 To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
 
@@ -135,7 +134,7 @@ Run this script for all the databases that need to be automatically unlocked for
 the users. An example run can look like this:
 
 ```sh
-sudo keepassxc-unlock-setup mike ~mike/keepassxc/passwords.kdbx
+sudo keepassxc-unlock-setup akash ~akash/keepassxc/passwords.kdbx
 ...
 Enter the password for the database: 
 Type the password again: 
