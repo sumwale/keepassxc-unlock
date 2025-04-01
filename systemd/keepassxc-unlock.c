@@ -20,6 +20,17 @@
 #define LOGIN_MANAGER_INTERFACE "org.freedesktop.login1.Manager"
 #define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
 
+#define print_info(...)                                                                            \
+  {                                                                                                \
+    printf(__VA_ARGS__);                                                                           \
+    fflush(stdout);                                                                                \
+  }
+#define print_error(...)                                                                           \
+  {                                                                                                \
+    fprintf(stderr, __VA_ARGS__);                                                                  \
+    fflush(stderr);                                                                                \
+  }
+
 /// @brief Show usage of this program
 /// @param script_name name of the invoking script as obtained from `argv[0]`
 void show_usage(const char *script_name) {
@@ -28,6 +39,7 @@ void show_usage(const char *script_name) {
          "databases\n");
   printf("\nArguments:\n");
   printf("  <USER>          user name or ID to be monitored\n\n");
+  fflush(stdout);
 }
 
 /// @brief Select the current X11/Wayland login session of the user.
@@ -45,7 +57,7 @@ gchar *select_session(GDBusConnection *connection, uid_t user_id) {
       LOGIN_MANAGER_INTERFACE, "ListSessions", NULL, NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
       NULL, &error);
   if (!sessions) {
-    fprintf(stderr, "Failed to list sessions: %s\n", error ? error->message : "(null)");
+    print_error("Failed to list sessions: %s\n", error ? error->message : "(null)");
     if (error) g_error_free(error);
     return NULL;
   }
@@ -63,8 +75,8 @@ gchar *select_session(GDBusConnection *connection, uid_t user_id) {
         g_variant_new("(s)", "org.freedesktop.login1.Session"), NULL, G_DBUS_CALL_FLAGS_NONE,
         DBUS_CALL_WAIT, NULL, &error);
     if (!session_props) {
-      fprintf(stderr, "Failed to get properties for %s: %s\n", session_path,
-          error ? error->message : "(null)");
+      print_error(
+          "Failed to get properties for %s: %s\n", session_path, error ? error->message : "(null)");
       if (error) g_error_free(error);
       continue;
     }
@@ -108,7 +120,7 @@ bool is_locked(GDBusConnection *connection, const char *session_path) {
       g_variant_new("(ss)", "org.freedesktop.login1.Session", "LockedHint"), NULL,
       G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
   if (!result) {
-    fprintf(stderr, "Failed to get LockedHint: %s\n", error ? error->message : "(null)");
+    print_error("Failed to get LockedHint: %s\n", error ? error->message : "(null)");
     if (error) g_error_free(error);
     return true;
   }
@@ -128,11 +140,10 @@ bool is_locked(GDBusConnection *connection, const char *session_path) {
 void change_euid(uid_t uid) {
   if (geteuid() == uid) return;
   if (seteuid(uid) != 0) {
-    fprintf(stderr, "Failed to seteuid to %d: ", uid);
-    fflush(stderr);
+    print_error("Failed to seteuid to %d: ", uid);
     perror(NULL);
     if (uid == 0) {    // failed to switch back to root?
-      fprintf(stderr, "\033[1;31mCannot switch back to root, terminating...\033[00m");
+      print_error("\033[1;31mCannot switch back to root, terminating...\033[00m");
       exit(1);
     }
   }
@@ -147,7 +158,7 @@ guint32 get_dbus_service_process_id(const char *dbus_api) {
   GError *error = NULL;
   GDBusConnection *session_conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
   if (!session_conn) {
-    fprintf(stderr, "Failed to connect to session bus: %s\n", error ? error->message : "(null)");
+    print_error("Failed to connect to session bus: %s\n", error ? error->message : "(null)");
     if (error) g_error_free(error);
     return 0;
   }
@@ -214,7 +225,7 @@ void unlock_databases(
     uid_t user_id, GDBusConnection *system_conn, const char *session_path, int wait_secs) {
   // last minute check to skip unlock if LockedHint is true
   if (is_locked(system_conn, session_path)) {
-    fprintf(stderr, "Skipping unlock since screen/session is still locked!\n");
+    print_error("Skipping unlock since screen/session is still locked!\n");
     return;
   }
 
@@ -239,7 +250,7 @@ void unlock_databases(
     snprintf(kp_sha512_file, sizeof(kp_sha512_file), "%s/keepassxc.sha512", user_conf_dir);
     FILE *file = fopen(kp_sha512_file, "r");
     if (!file) {
-      fprintf(stderr, "Skipping unlock due to missing %s -- run 'sudo keepassxc-unlock-setup'\n",
+      print_error("Skipping unlock due to missing %s -- run 'sudo keepassxc-unlock-setup'\n",
           kp_sha512_file);
       return;
     }
@@ -256,9 +267,8 @@ void unlock_databases(
         kp_exe_full[kp_full_len] = '\0';
         kp_exe_real = kp_exe_full;
       }
-      fprintf(stderr,
-          "\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID %d EXE %s)"
-          "\033[00m\n",
+      print_error("\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID %d EXE %s)"
+                  "\033[00m\n",
           kp_pid, kp_exe_real);
       char notify_cmd[PATH_MAX * 2];
       snprintf(notify_cmd, sizeof(notify_cmd),
@@ -278,7 +288,7 @@ void unlock_databases(
     break;
   }
   if (!kp_exe_verified) {
-    fprintf(stderr, "Failed to verify KeePassXC executable within %d secs\n", wait_secs);
+    print_error("Failed to verify KeePassXC executable within %d secs\n", wait_secs);
     return;
   }
 
@@ -290,7 +300,7 @@ void unlock_databases(
       char *conf_path = globbuf.gl_pathv[i];
       FILE *file = fopen(conf_path, "r");
       if (!file) {
-        fprintf(stderr, "Failed to open configuration file: %s\n", conf_path);
+        print_error("Failed to open configuration file: %s\n", conf_path);
         continue;
       }
 
@@ -348,8 +358,8 @@ void unlock_databases(
       if (result) {
         g_variant_unref(result);
       } else {
-        fprintf(stderr, "Failed to unlock database '%s': %s\n", kdbx_file,
-            error ? error->message : "(null)");
+        print_error(
+            "Failed to unlock database '%s': %s\n", kdbx_file, error ? error->message : "(null)");
         if (error) g_error_free(error);
       }
       g_object_unref(session_conn);
@@ -389,7 +399,7 @@ void handle_session_event(GDBusConnection *conn, const char *sender_name, const 
       bool session_removed = g_strcmp0(removed_session_path, session_data->session_path) == 0;
       g_free(removed_session_path);
       if (session_removed) {
-        printf("Exit on session end for %s\n", session_data->session_path);
+        print_info("Exit on session end for %s\n", session_data->session_path);
         g_main_loop_quit(session_data->loop);
       }
     }
@@ -406,14 +416,14 @@ void handle_session_event(GDBusConnection *conn, const char *sender_name, const 
     if (g_strcmp0(key, "LockedHint") == 0) {
       bool locked = g_variant_get_boolean(value);
       if (!locked && session_data->session_locked) {
-        printf("Unlocking database(s) after screen/session unlock event\n");
+        print_info("Unlocking database(s) after screen/session unlock event\n");
         unlock_databases(session_data->user_id, conn, session_data->session_path, 10);
       }
       session_data->session_locked = locked;
     } else if (g_strcmp0(key, "Active") == 0) {
       bool active = g_variant_get_boolean(value);
       if (active && !session_data->session_active && !session_data->session_locked) {
-        printf("Unlocking database(s) after session activation event\n");
+        print_info("Unlocking database(s) after session activation event\n");
         unlock_databases(session_data->user_id, conn, session_data->session_path, 30);
       }
       session_data->session_active = active;
@@ -429,7 +439,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   if (geteuid() != 0) {
-    fprintf(stderr, "This utility must be run as root\n");
+    print_error("This utility must be run as root\n");
     return 1;
   }
   // check if the given string is numeric ID or name
@@ -442,7 +452,7 @@ int main(int argc, char *argv[]) {
     pwd = getpwnam(argv[1]);
   }
   if (!pwd) {
-    fprintf(stderr, "Invalid user or ID '%s'\n", argv[1]);
+    print_error("Invalid user or ID '%s'\n", argv[1]);
     return 1;
   }
   user_id = pwd->pw_uid;
@@ -454,14 +464,14 @@ int main(int argc, char *argv[]) {
   bool glob_nomatch = glob(conf_pattern, 0, NULL, &globbuf) != 0 || globbuf.gl_pathc == 0;
   globfree(&globbuf);
   if (glob_nomatch) {
-    fprintf(stderr, "No configuration found for %d -- run keepassxc-unlock-setup first\n", user_id);
+    print_error("No configuration found for %d -- run keepassxc-unlock-setup first\n", user_id);
     return 0;
   }
 
   GError *error = NULL;
   GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
   if (!connection) {
-    fprintf(stderr, "Failed to connect to system bus: %s\n", error ? error->message : "(null)");
+    print_error("Failed to connect to system bus: %s\n", error ? error->message : "(null)");
     if (error) g_error_free(error);
     return 1;
   }
@@ -472,15 +482,15 @@ int main(int argc, char *argv[]) {
     sleep(1);
   }
   if (!session_path) {
-    fprintf(stderr, "No valid X11/Wayland session found for UID=%d\n", user_id);
+    print_error("No valid X11/Wayland session found for UID=%d\n", user_id);
     return 0;
   }
 
   // unlock on session startup
-  printf("Startup: unlocking registered KeePassXC database(s) for UID=%d\n", user_id);
+  print_info("Startup: unlocking registered KeePassXC database(s) for UID=%d\n", user_id);
   unlock_databases(user_id, connection, session_path, 60);
 
-  printf("Monitoring session %s for UID=%d\n", session_path, user_id);
+  print_info("Monitoring session %s for UID=%d\n", session_path, user_id);
   GMainLoop *loop = g_main_loop_new(NULL, FALSE);
   session_loop_data user_data = {loop, session_path, user_id, false, true};
   g_dbus_connection_signal_subscribe(connection, LOGIN_OBJECT_NAME, NULL, NULL, NULL, NULL,
