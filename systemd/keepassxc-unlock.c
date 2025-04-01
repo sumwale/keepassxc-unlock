@@ -51,7 +51,7 @@ gchar *select_session(GDBusConnection *connection, uid_t user_id) {
   while (g_variant_iter_loop(iter, "(susso)", NULL, &uid, NULL, NULL, &session_path)) {
     if (user_id != uid) continue;    // skip other users
 
-    if (session_valid_for_unlock(connection, session_path)) {
+    if (session_valid_for_unlock(connection, session_path, NULL)) {
       // returning this session_path hence don't g_free() unlike other cases when
       // breaking out of g_variant_iter_loop() requires explicit g_free()
       break;
@@ -106,12 +106,15 @@ void change_euid(uid_t uid) {
 ///        Since this uses the session bus, the call should be done after changing
 ///        the effective UID of this process to the target user.
 /// @param dbus_api the D-Bus API that the process has registered
+/// @param log_error if `true`, then D-Bus connection error is logged else not
 /// @return the process ID registered for the D-Bus API or 0 if something went wrong
-guint32 get_dbus_service_process_id(const char *dbus_api) {
+guint32 get_dbus_service_process_id(const char *dbus_api, bool log_error) {
   GError *error = NULL;
   GDBusConnection *session_conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
   if (!session_conn) {
-    print_error("Failed to connect to session bus: %s\n", error ? error->message : "(null)");
+    if (log_error) {
+      print_error("Failed to connect to session bus: %s\n", error ? error->message : "(null)");
+    }
     g_clear_error(&error);
     return 0;
   }
@@ -152,13 +155,14 @@ size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
   while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0) {
     EVP_DigestUpdate(md_ctx, buffer, bytes_read);
   }
+  if (bytes_read == -1) {
+    perror("sha512sum() failed to read file");
+    close(fd);
+    return 0;
+  }
   close(fd);
   EVP_DigestFinal_ex(md_ctx, hash, &hash_len);
   EVP_MD_CTX_free(md_ctx);
-  if (bytes_read == -1) {
-    perror("sha512sum() failed to read file");
-    return 0;
-  }
 
   size_t buf_len = 0;
   for (size_t i = 0; i < hash_len && buf_len < buffer_size - 1; i++, buf_len += 2) {
@@ -192,7 +196,8 @@ void unlock_databases(
   for (int i = 0; i < wait_secs; i++) {
     // check the process accepting the KeePassXC D-Bus messages and verify its checksum
     change_euid(user_id);
-    guint32 kp_pid = get_dbus_service_process_id(KP_DBUS_INTERFACE);
+    // log error on the last iteration
+    guint32 kp_pid = get_dbus_service_process_id(KP_DBUS_INTERFACE, i == wait_secs - 1);
     change_euid(0);
     if (kp_pid == 0) {
       sleep(1);
@@ -203,7 +208,7 @@ void unlock_databases(
     snprintf(kp_sha512_file, sizeof(kp_sha512_file), "%s/keepassxc.sha512", user_conf_dir);
     FILE *file = fopen(kp_sha512_file, "r");
     if (!file) {
-      print_error("Skipping unlock due to missing %s -- run 'sudo keepassxc-unlock-setup'\n",
+      print_error("Skipping unlock due to missing %s - run 'sudo keepassxc-unlock-setup'\n",
           kp_sha512_file);
       return;
     }
@@ -418,7 +423,8 @@ int main(int argc, char *argv[]) {
 
   // check if there are any database configuration files for the user
   if (!user_has_db_configs(user_id)) {
-    print_error("No configuration found for %d -- run keepassxc-unlock-setup first\n", user_id);
+    print_error(
+        "No configuration found for UID=%d - run 'sudo keepassxc-unlock-setup ...'\n", user_id);
     return 0;
   }
 

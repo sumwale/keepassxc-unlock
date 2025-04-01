@@ -1,7 +1,7 @@
 ## Introduction
 
-This PAM module for KeePassXC allows full passwordless unlocking of registered KeepassXC
-databases after a successful PAM authentication.
+This service for KeePassXC allows full passwordless unlocking of registered KeepassXC
+databases after a successful login or screen unlock.
 
 Unlike all other solutions, the password does not have to have any relation to the
 login password of the user. In fact the user may not even be using password for login
@@ -26,10 +26,10 @@ about needless complications on the trustworthiness of the other process. In add
 the SHA512 checksum of the keepassxc executable is verified before making the unlock
 D-Bus calls to verify that no other process is listening on.
 
-The PAM module itself just starts this user-specific systemd service after a successful
-authentication by other modules, and the service takes over thereafter watching for the
-session events on the system D-Bus and invoking for database unlock (for one or any
-    number of registered databases).
+The global service just starts this user-specific systemd service after a successful
+authentication by watching the system D-Bus events, and the service takes over
+thereafter watching for the session events on the system D-Bus and invoking for database
+unlock (for one or any number of registered databases).
 
 **Doesn't this mean that administrator has full access to all my passwords?**
 
@@ -95,18 +95,18 @@ individual files to help remember the passwords and key file paths.
 Latest version:
 
 ```sh
-curl -fsSL "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
+curl -fsSL "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash
 ```
 
 OR
 
 ```sh
-wget -qO- "https://github.com/sumwale/pam-keepassxc/blob/main/install.sh?raw=true" | bash
+wget -qO- "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash
 ```
 
 This will install the binaries in `/usr/local/sbin` and a systemd service file in
 `/etc/systemd/system`. The LICENSE and doc files are also installed in
-`/usr/local/share/doc/pam-keepassxc`.
+`/usr/local/share/doc/keepassxc-unlock`.
 
 The main systemd service binary is statically linked for best compability and will work
 on all Linux distributions.
@@ -125,7 +125,7 @@ To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
 
 The comments output at the end the install script mention the required configuration.
 
-First register the KeePassXC databases to be unlocked automatically by running the
+Register the KeePassXC databases to be unlocked automatically by running the
 `keepassxc-unlock-setup` script. This has to be run as root user and takes the name
 of the user and the path to the KDBX database as two arguments. It will then prompt
 the user to enter the key file (if any), and the password.
@@ -146,26 +146,6 @@ Enter the key file for the database (empty for none, use <TAB> for file name com
 The script will warn if TPM2 support cannot be detected and provide helpful suggestions.
 Further it will test these parameters for user confirmation and also register the
 keepassxc binary SHA512 checksum which is verified later before auto-unlocking.
-Then add the line below to the display manager's PAM configuration after all other
-`auth` lines:
-
-```
--auth   optional        pam_exec.so /usr/local/sbin/pam-keepassxc-auth
-```
-
-For instance on a Ubuntu system with SDDM, the `/etc/pam.d/sddm` looks like below after
-the above change:
-
-```
-...
-@include common-auth
--auth   optional        pam_kwallet5.so
--auth   optional        pam_exec.so /usr/local/sbin/pam-keepassxc-auth
-
-@include common-account
-...
-
-```
 
 That's it. Just logout then login again, and all the KeePassXC databases registered
 above will be automatically unlocked, and will continue being unlocked after a screen

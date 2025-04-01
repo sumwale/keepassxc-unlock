@@ -18,7 +18,8 @@ bool user_has_db_configs(guint32 user_id) {
   return has_configs;
 }
 
-bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_path) {
+bool session_valid_for_unlock(
+    GDBusConnection *connection, const gchar *session_path, guint32 *user_id_ptr) {
   GError *error = NULL;
   // get all properties of the session
   GVariant *session_props = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME, session_path,
@@ -36,11 +37,14 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   GVariantIter *iter = NULL;
   g_variant_get(session_props, "(a{sv})", &iter);
 
-  bool has_supported_type = false, is_remote = false, is_active = false;
+  bool user_found = false, has_supported_type = false, is_remote = false, is_active = false;
   const char *key = NULL;
   GVariant *value = NULL;
   while (g_variant_iter_loop(iter, "{&sv}", &key, &value)) {
-    if (g_strcmp0(key, "Type") == 0) {
+    if (g_strcmp0(key, "User") == 0) {
+      if (user_id_ptr != NULL) g_variant_get(value, "(uo)", user_id_ptr, NULL);
+      user_found = true;
+    } else if (g_strcmp0(key, "Type") == 0) {
       const char *type_val = g_variant_get_string(value, NULL);
       has_supported_type = g_strcmp0(type_val, "x11") == 0 || g_strcmp0(type_val, "wayland") == 0;
     } else if (g_strcmp0(key, "Remote") == 0) {
@@ -53,5 +57,5 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   g_variant_unref(session_props);
 
   // a session is a target for auto-unlock if it is of a supported type, not remote, and active
-  return has_supported_type && !is_remote && is_active;
+  return user_found && has_supported_type && !is_remote && is_active;
 }

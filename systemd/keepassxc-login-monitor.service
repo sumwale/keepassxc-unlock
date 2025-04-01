@@ -1,12 +1,12 @@
 [Unit]
-Description=Auto-unlock registered KeePassXC databases
-Wants=graphical.target
-After=graphical.target
+Description=Monitor logins to start KeePassXC auto-unlock
+Wants=display-manager.service
+After=display-manager.service
 
 [Service]
 Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/sbin
 Restart=on-failure
-ExecStart=keepassxc-unlock %i
+ExecStart=keepassxc-login-monitor
 
 LockPersonality=true
 MemoryDenyWriteExecute=yes
@@ -27,3 +27,6 @@ RestrictSUIDSGID=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=graphical.target

@@ -6,7 +6,9 @@ INCLUDES := $(shell pkg-config --cflags glib-2.0)
 LDFLAGS = -lgio-2.0 -lgmodule-2.0 -lgobject-2.0 -lglib-2.0 -lcrypto
 INSTALL_BIN_DIR = /usr/local/sbin
 
-TARGETS = keepassxc-unlock
+TARGETS = keepassxc-login-monitor keepassxc-unlock
+LOGIN_SERVICE = keepassxc-login-monitor.service
+SERVICES := $(LOGIN_SERVICE) keepassxc-unlock@.service
 ARCH := $(shell uname -m)
 TARGETS_STATIC := $(patsubst %,%-$(ARCH)-static,$(TARGETS))
 STATIC_LIBS =
@@ -35,9 +37,22 @@ clean:
 	rm -f $(TARGETS) $(TARGETS_STATIC)
 
 install: $(TARGETS)
+	systemctl stop $(LOGIN_SERVICE) || /bin/true
 	install -m 0755 $(TARGETS) $(INSTALL_BIN_DIR)/
+	install -m 0644 $(SERVICES) /etc/systemd/system/
+	systemctl daemon-reload
+	systemctl enable --now $(LOGIN_SERVICE)
 
 uninstall:
 	for target in $(TARGETS); do \
 		rm -f $(INSTALL_BIN_DIR)/$${target}; \
 	done
+	for unit in `systemctl -q list-units 'keepassxc-unlock@*.service' | awk '{ print $$1 }'`; do \
+		systemctl stop "$$unit"; \
+	done
+	systemctl stop $(LOGIN_SERVICE) || /bin/true
+	systemctl disable $(LOGIN_SERVICE) || /bin/true
+	for service in $(SERVICES); do \
+		rm -f /etc/systemd/system/$${service}; \
+	done
+	systemctl daemon-reload
