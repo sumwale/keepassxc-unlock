@@ -432,12 +432,20 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "This utility must be run as root\n");
     return 1;
   }
-  struct passwd *pwd = getpwnam(argv[1]);
+  // check if the given string is numeric ID or name
+  struct passwd *pwd;
+  char *arg_end;
+  uid_t user_id = strtoul(argv[1], &arg_end, 10);
+  if (argv[1][0] != '\0' && *arg_end == '\0') {
+    pwd = getpwuid(user_id);
+  } else {
+    pwd = getpwnam(argv[1]);
+  }
   if (!pwd) {
-    fprintf(stderr, "Invalid user '%s'\n", argv[1]);
+    fprintf(stderr, "Invalid user or ID '%s'\n", argv[1]);
     return 1;
   }
-  uid_t user_id = pwd->pw_uid;
+  user_id = pwd->pw_uid;
 
   char user_conf_dir[100], conf_pattern[128];
   glob_t globbuf;
