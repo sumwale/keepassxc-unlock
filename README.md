@@ -112,7 +112,7 @@ The main systemd service binary is statically linked for best compability and wi
 on all Linux distributions.
 
 If you prefer building the binary from source, then a dynamically linked version can be
-built and installed by passing `--build` option at the end of `bash` in the commands above.
+built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above.
 This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `openssl`.
 For example for Debian/Ubuntu based systems install these dependencies with:
 `sudo apt install build-essential libglib2.0-dev libssl-dev` or on Fedora/RHEL based
