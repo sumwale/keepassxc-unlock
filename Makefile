@@ -1,21 +1,25 @@
-.PHONY: all clean install uninstall
+.PHONY: all all-static all-static-musl clean install uninstall
 
 SUBDIR = systemd
 SETUP = keepassxc-unlock-setup
+INSTALL_BIN_DIR = /usr/local/sbin
 
 all:
 	$(MAKE) -C $(SUBDIR)
 
-static-musl:
-	$(MAKE) -C $(SUBDIR) static-musl
+all-static:
+	$(MAKE) -C $(SUBDIR) all-static
 
-install:
-	$(MAKE) -C $(SUBDIR) install
-	install -m 0755 $(SETUP) /usr/local/sbin/$(SETUP)
-
-uninstall:
-	$(MAKE) -C $(SUBDIR) uninstall
-	rm -f /usr/local/sbin/$(SETUP)
+all-static-musl:
+	$(MAKE) -C $(SUBDIR) all-static-musl
 
 clean:
 	$(MAKE) -C $(SUBDIR) clean
+
+install:
+	$(MAKE) -C $(SUBDIR) install
+	install -m 0755 $(SETUP) $(INSTALL_BIN_DIR)/$(SETUP)
+
+uninstall:
+	$(MAKE) -C $(SUBDIR) uninstall
+	rm -f $(INSTALL_BIN_DIR)/$(SETUP)

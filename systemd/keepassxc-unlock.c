@@ -1,35 +1,16 @@
 #include <fcntl.h>
-#include <gio/gio.h>
 #include <glib.h>
 #include <glob.h>
 #include <openssl/evp.h>
 #include <pwd.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#define KP_CONFIG_DIR "/etc/keepassxc-unlock"
+#include "keepassxc-unlock-common.h"
+
 #define SHA512_BUFFER_SIZE EVP_MAX_MD_SIZE * 2 + 1
-
-#define DBUS_CALL_WAIT 60000    // in milliseconds
-#define LOGIN_OBJECT_NAME "org.freedesktop.login1"
-#define LOGIN_OBJECT_PATH "/org/freedesktop/login1"
-#define LOGIN_MANAGER_INTERFACE "org.freedesktop.login1.Manager"
+#define MAX_PASSWORD_SIZE 4096    // maximum allowed size of decrypted password plus one for null
 #define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
-
-#define print_info(...)                                                                            \
-  {                                                                                                \
-    printf(__VA_ARGS__);                                                                           \
-    fflush(stdout);                                                                                \
-  }
-#define print_error(...)                                                                           \
-  {                                                                                                \
-    fprintf(stderr, __VA_ARGS__);                                                                  \
-    fflush(stderr);                                                                                \
-  }
 
 /// @brief Show usage of this program
 /// @param script_name name of the invoking script as obtained from `argv[0]`
@@ -58,7 +39,7 @@ gchar *select_session(GDBusConnection *connection, uid_t user_id) {
       NULL, &error);
   if (!sessions) {
     print_error("Failed to list sessions: %s\n", error ? error->message : "(null)");
-    if (error) g_error_free(error);
+    g_clear_error(&error);
     return NULL;
   }
 
@@ -70,37 +51,9 @@ gchar *select_session(GDBusConnection *connection, uid_t user_id) {
   while (g_variant_iter_loop(iter, "(susso)", NULL, &uid, NULL, NULL, &session_path)) {
     if (user_id != uid) continue;    // skip other users
 
-    GVariant *session_props = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME,
-        session_path, "org.freedesktop.DBus.Properties", "GetAll",
-        g_variant_new("(s)", "org.freedesktop.login1.Session"), NULL, G_DBUS_CALL_FLAGS_NONE,
-        DBUS_CALL_WAIT, NULL, &error);
-    if (!session_props) {
-      print_error(
-          "Failed to get properties for %s: %s\n", session_path, error ? error->message : "(null)");
-      if (error) g_error_free(error);
-      continue;
-    }
-
-    GVariantIter *iter_inner = NULL;
-    g_variant_get(session_props, "(a{sv})", &iter_inner);
-    bool s_supported_type = false, s_remote = false, s_active = false;
-    const char *key = NULL;
-    GVariant *value = NULL;
-    while (g_variant_iter_loop(iter_inner, "{&sv}", &key, &value)) {
-      if (g_strcmp0(key, "Type") == 0) {
-        const char *type_val = g_variant_get_string(value, NULL);
-        s_supported_type = g_strcmp0(type_val, "x11") == 0 || g_strcmp0(type_val, "wayland") == 0;
-      } else if (g_strcmp0(key, "Remote") == 0) {
-        s_remote = g_variant_get_boolean(value);
-      } else if (g_strcmp0(key, "Active") == 0) {
-        s_active = g_variant_get_boolean(value);
-      }
-    }
-    g_variant_iter_free(iter_inner);
-    g_variant_unref(session_props);
-    if (s_supported_type && !s_remote && s_active) {
+    if (session_valid_for_unlock(connection, session_path)) {
       // returning this session_path hence don't g_free() unlike other cases when
-      // breaking out of g_variant_iter_loop()
+      // breaking out of g_variant_iter_loop() requires explicit g_free()
       break;
     }
   }
@@ -121,7 +74,7 @@ bool is_locked(GDBusConnection *connection, const char *session_path) {
       G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
   if (!result) {
     print_error("Failed to get LockedHint: %s\n", error ? error->message : "(null)");
-    if (error) g_error_free(error);
+    g_clear_error(&error);
     return true;
   }
 
@@ -159,7 +112,7 @@ guint32 get_dbus_service_process_id(const char *dbus_api) {
   GDBusConnection *session_conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
   if (!session_conn) {
     print_error("Failed to connect to session bus: %s\n", error ? error->message : "(null)");
-    if (error) g_error_free(error);
+    g_clear_error(&error);
     return 0;
   }
   GVariant *result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.DBus", "/",
@@ -171,7 +124,7 @@ guint32 get_dbus_service_process_id(const char *dbus_api) {
     g_variant_get(result, "(u)", &pid);
     return pid;
   } else {
-    if (error) g_error_free(error);
+    g_clear_error(&error);
     return 0;
   }
 }
@@ -292,11 +245,12 @@ void unlock_databases(
     return;
   }
 
-  char conf_pattern[128];
+  char conf_pattern[128], decrypted_passwd[MAX_PASSWORD_SIZE];
   snprintf(conf_pattern, sizeof(conf_pattern), "%s/*.conf", user_conf_dir);
   glob_t globbuf;
   if (glob(conf_pattern, 0, NULL, &globbuf) == 0) {
     for (size_t i = 0; i < globbuf.gl_pathc; i++) {
+      memset(decrypted_passwd, 0, MAX_PASSWORD_SIZE);
       char *conf_path = globbuf.gl_pathv[i];
       FILE *file = fopen(conf_path, "r");
       if (!file) {
@@ -304,40 +258,50 @@ void unlock_databases(
         continue;
       }
 
-      char line[1024];
-      char kdbx_file[1024] = {0};
-      char key_file[1024] = {0};
-      char enc_pwd[4096] = {0};
+      char line[PATH_MAX];
+      char kdbx_file[PATH_MAX] = {0};
+      char key_file[PATH_MAX] = {0};
+      int passwd_start_line = 0;
       while (fgets(line, sizeof(line), file)) {
+        passwd_start_line++;
         if (strncmp(line, "DB=", 3) == 0) {
           strncpy(kdbx_file, line + 3, sizeof(kdbx_file) - 1);
           kdbx_file[strcspn(kdbx_file, "\n")] = '\0';
         } else if (strncmp(line, "KEY=", 4) == 0) {
           strncpy(key_file, line + 4, sizeof(key_file) - 1);
           key_file[strcspn(key_file, "\n")] = '\0';
-        } else if (strncmp(line, "PASSWORD:", 9) == 0) {
-          continue;
-        } else {
-          strncat(enc_pwd, line, sizeof(enc_pwd) - strlen(enc_pwd) - 1);
+        } else if (strncmp(line, "PASSWORD:", 9) != 0) {
+          // password starts after the line having PASSWORD:
+          break;
         }
       }
       fclose(file);
 
-      char conf_name[128] = {0}, decrypt_cmd[8192], decrypted_pwd[4096];
+      char conf_name[128] = {0}, decrypt_cmd[256];
       char *conf_name_p, *conf_filename = strrchr(conf_path, '/');
       if (conf_filename != NULL && (conf_name_p = strstr(conf_filename + 1, ".conf")) != NULL) {
         size_t conf_name_len = conf_name_p - conf_filename - 1;
         strncpy(conf_name, conf_filename + 1, MIN(conf_name_len, sizeof(conf_name)));
       }
       snprintf(decrypt_cmd, sizeof(decrypt_cmd),
-          "echo -n '%s' | systemd-creds --name='%s' decrypt - -", enc_pwd, conf_name);
+          "tail '-n+%d' '%s' | systemd-creds '--name=%s' decrypt - -", passwd_start_line, conf_path,
+          conf_name);
       FILE *pipe = popen(decrypt_cmd, "r");
       if (!pipe) {
         perror("Failed to run systemd-creds for decryption");
         continue;
       }
-      size_t len = fread(decrypted_pwd, 1, sizeof(decrypted_pwd), pipe);
-      decrypted_pwd[len] = '\0';
+      size_t bytes_read, total_bytes_read = 0;
+      while (total_bytes_read < MAX_PASSWORD_SIZE &&
+             (bytes_read = fread(decrypted_passwd + total_bytes_read, 1,
+                  MAX_PASSWORD_SIZE - total_bytes_read, pipe)) > 0) {
+        total_bytes_read += bytes_read;
+      }
+      if (total_bytes_read >= MAX_PASSWORD_SIZE) {
+        print_error("Password for '%s' exceeds %u characters!\n", kdbx_file, MAX_PASSWORD_SIZE - 1);
+        continue;
+      }
+      decrypted_passwd[total_bytes_read] = '\0';
       pclose(pipe);
 
       change_euid(user_id);
@@ -346,21 +310,20 @@ void unlock_databases(
       if (!session_conn) {
         fprintf(
             stderr, "Failed to connect to session bus: %s\n", error ? error->message : "(null)");
-        if (error) g_error_free(error);
+        g_clear_error(&error);
         change_euid(0);
         continue;
       }
       GVariant *result = g_dbus_connection_call_sync(session_conn, KP_DBUS_INTERFACE, "/keepassxc",
           KP_DBUS_INTERFACE, "openDatabase",
-          g_variant_new("(sss)", kdbx_file, decrypted_pwd, key_file), NULL, G_DBUS_CALL_FLAGS_NONE,
-          DBUS_CALL_WAIT, NULL, &error);
-      memset(decrypted_pwd, 0, sizeof(decrypted_pwd));
+          g_variant_new("(sss)", kdbx_file, decrypted_passwd, key_file), NULL,
+          G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
       if (result) {
         g_variant_unref(result);
       } else {
         print_error(
             "Failed to unlock database '%s': %s\n", kdbx_file, error ? error->message : "(null)");
-        if (error) g_error_free(error);
+        g_clear_error(&error);
       }
       g_object_unref(session_conn);
       change_euid(0);
@@ -378,7 +341,7 @@ typedef struct {
   bool session_active;          // holds the previous active state of the session
 } session_loop_data;
 
-/// @brief Callback to handle session events on `org.freedesktop.login1`
+/// @brief Callback to handle session events on `org.freedesktop.login1` for selected session
 /// @param conn the `GBusConnection` object for the system D-Bus
 /// @param sender_name name of the sender of the event
 /// @param object_path path of the object for which the event was raised
@@ -389,25 +352,6 @@ typedef struct {
 void handle_session_event(GDBusConnection *conn, const char *sender_name, const char *object_path,
     const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data) {
   session_loop_data *session_data = (session_loop_data *)user_data;
-
-  if (g_strcmp0(object_path, LOGIN_OBJECT_PATH) == 0) {
-    // check for session close
-    if (g_strcmp0(interface_name, LOGIN_MANAGER_INTERFACE) == 0 &&
-        g_strcmp0(signal_name, "SessionRemoved") == 0) {
-      char *removed_session_path = "";
-      g_variant_get(parameters, "(so)", NULL, &removed_session_path);
-      bool session_removed = g_strcmp0(removed_session_path, session_data->session_path) == 0;
-      g_free(removed_session_path);
-      if (session_removed) {
-        print_info("Exit on session end for %s\n", session_data->session_path);
-        g_main_loop_quit(session_data->loop);
-      }
-    }
-    return;
-  } else if (g_strcmp0(object_path, session_data->session_path) != 0) {
-    return;
-  }
-
   GVariantIter *iter = NULL;
   const char *key;
   GVariant *value = NULL;
@@ -432,6 +376,20 @@ void handle_session_event(GDBusConnection *conn, const char *sender_name, const 
   g_variant_iter_free(iter);
 }
 
+/// @brief Callback to handle session close for the selected session
+void handle_session_end(GDBusConnection *conn, const char *sender_name, const char *object_path,
+    const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data) {
+  session_loop_data *session_data = (session_loop_data *)user_data;
+  char *removed_session_path = "";
+  g_variant_get(parameters, "(so)", NULL, &removed_session_path);
+  bool session_removed = g_strcmp0(removed_session_path, session_data->session_path) == 0;
+  g_free(removed_session_path);
+  if (session_removed) {
+    print_info("Exit on session end for %s\n", session_data->session_path);
+    g_main_loop_quit(session_data->loop);
+  }
+}
+
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
@@ -439,9 +397,10 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   if (geteuid() != 0) {
-    print_error("This utility must be run as root\n");
+    print_error("This program must be run as root\n");
     return 1;
   }
+
   // check if the given string is numeric ID or name
   struct passwd *pwd;
   char *arg_end;
@@ -457,24 +416,22 @@ int main(int argc, char *argv[]) {
   }
   user_id = pwd->pw_uid;
 
-  char user_conf_dir[100], conf_pattern[128];
-  glob_t globbuf;
-  snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%d", KP_CONFIG_DIR, user_id);
-  snprintf(conf_pattern, sizeof(conf_pattern), "%s/*.conf", user_conf_dir);
-  bool glob_nomatch = glob(conf_pattern, 0, NULL, &globbuf) != 0 || globbuf.gl_pathc == 0;
-  globfree(&globbuf);
-  if (glob_nomatch) {
+  // check if there are any database configuration files for the user
+  if (!user_has_db_configs(user_id)) {
     print_error("No configuration found for %d -- run keepassxc-unlock-setup first\n", user_id);
     return 0;
   }
 
+  // connect to the system bus
   GError *error = NULL;
   GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
   if (!connection) {
     print_error("Failed to connect to system bus: %s\n", error ? error->message : "(null)");
-    if (error) g_error_free(error);
+    g_clear_error(&error);
     return 1;
   }
+
+  // choose the first active, non-remote, x11/wayland session of the user
   gchar *session_path = NULL;
   for (int i = 0; i < 30; i++) {
     session_path = select_session(connection, user_id);
@@ -482,23 +439,51 @@ int main(int argc, char *argv[]) {
     sleep(1);
   }
   if (!session_path) {
-    print_error("No valid X11/Wayland session found for UID=%d\n", user_id);
+    print_error("No valid X11/Wayland session found for UID=%u\n", user_id);
+    g_object_unref(connection);
     return 0;
   }
 
-  // unlock on session startup
-  print_info("Startup: unlocking registered KeePassXC database(s) for UID=%d\n", user_id);
+  // unlock on startup since this program should be invoked on user session start
+  print_info("Startup: unlocking registered KeePassXC database(s) for UID=%u\n", user_id);
   unlock_databases(user_id, connection, session_path, 60);
 
-  print_info("Monitoring session %s for UID=%d\n", session_path, user_id);
+  // start monitoring the session
+  int exit_code = 0;
+  print_info("Monitoring session %s for UID=%u\n", session_path, user_id);
   GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+  // subscription is on the root org.freedesktop.login1 since the SessionRemoved signal has
+  // also to be monitored which is only received on the root login object
   session_loop_data user_data = {loop, session_path, user_id, false, true};
-  g_dbus_connection_signal_subscribe(connection, LOGIN_OBJECT_NAME, NULL, NULL, NULL, NULL,
-      G_DBUS_SIGNAL_FLAGS_NONE, handle_session_event, &user_data, NULL);
-  g_main_loop_run(loop);
+  guint session_subscription_id = g_dbus_connection_signal_subscribe(connection,
+      LOGIN_OBJECT_NAME,                    // sender
+      "org.freedesktop.DBus.Properties",    // interface
+      "PropertiesChanged",                  // signal name
+      session_path,                         // object path
+      NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_session_event, &user_data, NULL);
+  if (session_subscription_id != 0) {
+    guint login_subscription_id = g_dbus_connection_signal_subscribe(connection, LOGIN_OBJECT_NAME,
+        LOGIN_MANAGER_INTERFACE, "SessionRemoved", LOGIN_OBJECT_PATH, NULL,
+        G_DBUS_SIGNAL_FLAGS_NONE, handle_session_end, &user_data, NULL);
+    if (login_subscription_id != 0) {
+      // run the main loop
+      g_main_loop_run(loop);
 
+      g_dbus_connection_signal_unsubscribe(connection, login_subscription_id);
+    } else {
+      print_error("Failed to subscribe to D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
+      exit_code = 1;
+    }
+    g_dbus_connection_signal_unsubscribe(connection, session_subscription_id);
+  } else {
+    print_error("Failed to subscribe to D-Bus signals for %s\n", session_path);
+    exit_code = 1;
+  }
+
+  // cleanup
   g_object_unref(connection);
   g_main_loop_unref(loop);
   g_free(session_path);
-  return 0;
+
+  return exit_code;
 }

@@ -3,6 +3,7 @@
     "files.associations": {
         "gio.h": "c",
         "fcntl.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "types.h": "c"
     }
 }

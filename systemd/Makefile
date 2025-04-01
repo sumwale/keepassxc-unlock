@@ -1,36 +1,43 @@
+.PHONY: all all-static all-static-musl clean install uninstall
+
 CC = gcc
-CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wstack-protector -O2 -fstack-protector
-STATIC_LIBS =
+CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wstack-protector -O2 -fstack-protector-all -fstack-protector-strong
+INCLUDES := $(shell pkg-config --cflags glib-2.0)
 LDFLAGS = -lgio-2.0 -lgmodule-2.0 -lgobject-2.0 -lglib-2.0 -lcrypto
-TARGET = keepassxc-unlock
-SRC = keepassxc-unlock.c
+INSTALL_BIN_DIR = /usr/local/sbin
 
+TARGETS = keepassxc-unlock
 ARCH := $(shell uname -m)
-TARGET_STATIC = $(TARGET)-$(ARCH)-static
+TARGETS_STATIC := $(patsubst %,%-$(ARCH)-static,$(TARGETS))
+STATIC_LIBS =
 
-.PHONY: all static-musl clean install uninstall
+all: $(TARGETS)
 
-all: $(TARGET)
+all-static: $(TARGETS_STATIC)
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) `pkg-config --cflags glib-2.0` -o $(TARGET) $(SRC) $(LDFLAGS)
+%.c: keepassxc-unlock-common.h
 
-$(TARGET_STATIC): $(SRC)
-	$(CC) -static $(CFLAGS) `pkg-config --cflags glib-2.0` -o $(TARGET_STATIC) $(SRC) $(LDFLAGS) $(STATIC_LIBS)
+$(TARGETS): %: %.c keepassxc-unlock-common.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-static-musl:
+$(TARGETS_STATIC): %-$(ARCH)-static: %.c keepassxc-unlock-common.c
+	$(CC) -static $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS) $(STATIC_LIBS)
+
+all-static-musl:
 	if type docker >/dev/null 2>/dev/null; then \
 		container_cmd=docker; \
 	else \
 		container_cmd=podman; \
 	fi; \
-	$$container_cmd run --rm -v `pwd`:/build -it alpine:latest /bin/sh /build/make-alpine-musl.sh
-
-install: $(TARGET)
-	install -m 0755 $(TARGET) /usr/local/sbin/$(TARGET)
-
-uninstall:
-	rm -f /usr/local/sbin/$(TARGET)
+	$${container_cmd} run --rm -v `pwd`:/build -it alpine:latest /bin/sh /build/make-alpine-musl.sh
 
 clean:
-	rm -f $(TARGET) $(TARGET_STATIC)
+	rm -f $(TARGETS) $(TARGETS_STATIC)
+
+install: $(TARGETS)
+	install -m 0755 $(TARGETS) $(INSTALL_BIN_DIR)/
+
+uninstall:
+	for target in $(TARGETS); do \
+		rm -f $(INSTALL_BIN_DIR)/$${target}; \
+	done

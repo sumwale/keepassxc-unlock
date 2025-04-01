@@ -2,13 +2,11 @@
 
 set -e
 
-apk add gcc make musl-dev glib-dev glib-static openssl-dev openssl-libs-static zlib-static
-apk add coreutils util-linux-static libeconf-dev
+apk add gcc make coreutils musl-dev glib-dev openssl-dev libeconf-dev
+apk add glib-static openssl-libs-static zlib-static util-linux-static
 apk cache purge
 
-arch=`uname -m`
-target=keepassxc-unlock-$arch-static
 cd /build
-make $target STATIC_LIBS="-lpcre2-8 -lffi -lz -lintl -lmount -lblkid -leconf"
-strip -g $target
-chown --reference keepassxc-unlock.c $target
+make all-static STATIC_LIBS="-lpcre2-8 -lffi -lz -lintl -lmount -lblkid -leconf"
+strip -g *-static
+chown --reference keepassxc-unlock.c *-static
