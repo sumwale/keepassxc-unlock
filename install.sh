@@ -93,7 +93,6 @@ rm -f $tmp_dir/*
 echo
 echo -e "${fg_green}Installation complete."
 echo
-echo "Run keepassxc-unlock-setup as root to register users' KeePassXC databases to be auto-unlocked"
-echo
-echo "Once done, logout and login, then enjoy auto-unlocking of all registered databases."
+echo "Run keepassxc-unlock-setup as root to register users' KeePassXC databases to be auto-unlocked."
+echo "Once registered, logout and login, then enjoy auto-unlocking of all registered databases."
 echo -e $fg_reset
