@@ -140,7 +140,7 @@ bool is_locked(GDBusConnection *connection, const char *session_path) {
 void change_euid(uid_t uid) {
   if (geteuid() == uid) return;
   if (seteuid(uid) != 0) {
-    print_error("Failed to seteuid to %d: ", uid);
+    print_error("Failed in seteuid to %d: ", uid);
     perror(NULL);
     if (uid == 0) {    // failed to switch back to root?
       print_error("\033[1;31mCannot switch back to root, terminating...\033[00m");
