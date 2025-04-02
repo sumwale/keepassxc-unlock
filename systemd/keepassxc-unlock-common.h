@@ -9,6 +9,8 @@
 
 #include <gio/gio.h>
 
+#define PRODUCT_VERSION "0.9.2"
+
 #define KP_CONFIG_DIR "/etc/keepassxc-unlock"
 
 #define LOGIN_OBJECT_NAME "org.freedesktop.login1"

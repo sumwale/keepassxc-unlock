@@ -23,6 +23,11 @@ void show_usage(const char *script_name) {
   fflush(stdout);
 }
 
+// TODO: instead of selecting some session, pass the session path as argument that is obtained from
+// an environment file filled in by keepassxc-login-monitor service (or encode both UID and session
+// ID in template service parameter), then check the session against the PID of the keepassxc
+// executable using org.freedesktop.login1.Manager.GetSessionByPID API
+
 /// @brief Select the current X11/Wayland login session of the user.
 ///        If there are multiple for the user, then the first one in the list is returned.
 /// @param connection the `GBusConnection` object for the system D-Bus
@@ -434,6 +439,8 @@ int main(int argc, char *argv[]) {
         "No configuration found for UID=%d - run 'sudo keepassxc-unlock-setup ...'\n", user_id);
     return 0;
   }
+
+  printf("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
   GError *error = NULL;
