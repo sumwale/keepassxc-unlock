@@ -440,7 +440,7 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  printf("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
+  print_info("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
   GError *error = NULL;
