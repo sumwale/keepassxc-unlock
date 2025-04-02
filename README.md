@@ -108,13 +108,13 @@ This will install the binaries in `/usr/local/sbin` and a systemd service file i
 `/etc/systemd/system`. The LICENSE and doc files are also installed in
 `/usr/local/share/doc/keepassxc-unlock`.
 
-The main systemd service binary is statically linked for best compability and will work
-on all Linux distributions.
+The main systemd service binaries are statically linked for best compability and will
+work on all Linux distributions.
 
-If you prefer building the binary from source, then a dynamically linked version can be
+If you prefer building the binaries from source, then a dynamically linked version can be
 built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above.
 This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `openssl`.
-For example for Debian/Ubuntu based systems install these dependencies with:
+As an example, for Debian/Ubuntu based systems, install these dependencies with:
 `sudo apt install build-essential libglib2.0-dev libssl-dev` or on Fedora/RHEL based
 systems with: `sudo dnf install gcc make glib2-devel openssl-devel`.
 

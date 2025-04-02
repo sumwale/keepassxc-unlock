@@ -477,12 +477,12 @@ int main(int argc, char *argv[]) {
 
       g_dbus_connection_signal_unsubscribe(connection, login_subscription_id);
     } else {
-      print_error("Failed to subscribe to D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
+      print_error("Failed to subscribe to receive D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
       exit_code = 1;
     }
     g_dbus_connection_signal_unsubscribe(connection, session_subscription_id);
   } else {
-    print_error("Failed to subscribe to D-Bus signals for %s\n", session_path);
+    print_error("Failed to subscribe to receive D-Bus signals for %s\n", session_path);
     exit_code = 1;
   }
 

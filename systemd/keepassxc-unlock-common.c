@@ -5,12 +5,11 @@
 #include "keepassxc-unlock-common.h"
 
 bool user_has_db_configs(guint32 user_id) {
-  char user_conf_dir[100], conf_pattern[128];
+  char conf_pattern[128];
   glob_t globbuf;
 
   // construct the configuration directory and pattern
-  snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%d", KP_CONFIG_DIR, user_id);
-  snprintf(conf_pattern, sizeof(conf_pattern), "%s/*.conf", user_conf_dir);
+  snprintf(conf_pattern, sizeof(conf_pattern), "%s/%d/*.conf", KP_CONFIG_DIR, user_id);
 
   // check if there are any configuration files in the user-specific configuration directory
   bool has_configs = glob(conf_pattern, 0, NULL, &globbuf) == 0 && globbuf.gl_pathc > 0;

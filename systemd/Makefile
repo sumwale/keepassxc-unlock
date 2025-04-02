@@ -2,7 +2,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wstack-protector -O2 -fstack-protector-all -fstack-protector-strong
-INCLUDES := $(shell pkg-config --cflags glib-2.0)
+INCLUDES := $(shell pkg-config --cflags glib-2.0 gio-2.0 libcrypto)
 LDFLAGS = -lgio-2.0 -lgmodule-2.0 -lgobject-2.0 -lglib-2.0 -lcrypto
 INSTALL_BIN_DIR = /usr/local/sbin
 
@@ -11,6 +11,7 @@ LOGIN_SERVICE = keepassxc-login-monitor.service
 SERVICES := $(LOGIN_SERVICE) keepassxc-unlock@.service
 ARCH := $(shell uname -m)
 TARGETS_STATIC := $(patsubst %,%-$(ARCH)-static,$(TARGETS))
+PLATFORMS = linux/$(ARCH)
 STATIC_LIBS =
 
 all: $(TARGETS)
@@ -31,10 +32,12 @@ all-static-musl:
 	else \
 		container_cmd=podman; \
 	fi; \
-	$${container_cmd} run --rm -v `pwd`:/build -it alpine:latest /bin/sh /build/make-alpine-musl.sh
+	for platform in $(PLATFORMS); do \
+		$${container_cmd} run --platform $${platform} --rm -v `pwd`:/build -it alpine:latest /bin/sh /build/make-alpine-musl.sh; \
+	done
 
 clean:
-	rm -f $(TARGETS) $(TARGETS_STATIC)
+	rm -f $(TARGETS) keepassxc-*-static
 
 install: $(TARGETS)
 	systemctl stop $(LOGIN_SERVICE) || /bin/true

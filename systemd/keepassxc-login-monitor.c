@@ -20,16 +20,18 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
     return;
   }
 
-  // check if user has any databases configured for auto-unlock
+  // check if the user has any databases configured for auto-unlock
   if (!user_has_db_configs(user_id)) {
-    print_error("Ignoring session as no configuration was found for UID=%u\n", user_id);
+    print_error(
+        "Ignoring session as no KDBX databases have been configured for auto-unlock for UID=%u\n",
+        user_id);
     return;
   }
 
   // start the systemd service for the user which gets instantiated from the template service
   char service_cmd[1024];
   snprintf(
-      service_cmd, sizeof(service_cmd), "systemctl start 'keepassxc-unlock@%u.service'", user_id);
+      service_cmd, sizeof(service_cmd), "systemctl start keepassxc-unlock@%u.service", user_id);
   print_info("Executing: %s\n", service_cmd);
   if (system(service_cmd) != 0) {
     print_error(
@@ -65,7 +67,7 @@ int main(int argc, char *argv[]) {
       LOGIN_OBJECT_PATH,          // object path
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_new_session, NULL, NULL);
   if (subscription_id == 0) {
-    print_error("Failed to subscribe to D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
+    print_error("Failed to subscribe to receive D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
     g_object_unref(connection);
     return 1;
   }
