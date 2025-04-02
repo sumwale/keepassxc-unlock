@@ -112,9 +112,20 @@ The main systemd service binaries are statically linked for best compability and
 work on all Linux distributions.
 
 If you prefer building the binaries from source, then a dynamically linked version can be
-built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above.
+built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above:
+
+```sh
+curl -fsSL "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash /dev/stdin --build
+```
+
+OR
+
+```sh
+wget -qO- "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash /dev/stdin --build
+```
+
 This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `openssl`.
-As an example, for Debian/Ubuntu based systems, install these dependencies with:
+As an example, for Debian/Ubuntu based systems, these dependencies can be installed with:
 `sudo apt install build-essential libglib2.0-dev libssl-dev` or on Fedora/RHEL based
 systems with: `sudo dnf install gcc make glib2-devel openssl-devel`.
 
