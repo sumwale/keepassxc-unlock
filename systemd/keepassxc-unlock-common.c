@@ -4,6 +4,9 @@
 
 #include "keepassxc-unlock-common.h"
 
+/// @brief Check if the user with given ID has any KeePassXC database configured for auto-unlock.
+/// @param user_id the ID of the user to check
+/// @return `true` if user has any KeePassXC database configured for auto-unlock else `false`
 bool user_has_db_configs(guint32 user_id) {
   char conf_pattern[128];
   glob_t globbuf;
@@ -17,6 +20,13 @@ bool user_has_db_configs(guint32 user_id) {
   return has_configs;
 }
 
+/// @brief Check if auto-unlock should be attempted for a session with given path
+///        (of the form `/org/freedesktop/login1/session/...`). The checks performed include
+///        the type which must be `x11` or `wayland`, should be active and should not be remote.
+/// @param connection the `GBusConnection` object for the system D-Bus
+/// @param session_path path of the session to check
+/// @param user_id_ptr pointer to `guint32` which is filled with owner's user ID if non-NULL
+/// @return `true` if auto-unlock can be attempted for the session else `false`
 bool session_valid_for_unlock(
     GDBusConnection *connection, const gchar *session_path, guint32 *user_id_ptr) {
   GError *error = NULL;

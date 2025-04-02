@@ -2,6 +2,15 @@
 
 #include "keepassxc-unlock-common.h"
 
+/// @brief Callback for creation of a new session that checks if it is a valid target for auto-lock
+///        and if so, then starts user-specific `keepassxc-unlock@<uid>.service` to handle the same.
+/// @param conn the `GBusConnection` object for the system D-Bus
+/// @param sender_name name of the sender of the event
+/// @param object_path path of the object for which the event was raised
+/// @param interface_name D-Bus interface of the raised signal
+/// @param signal_name name of the D-Bus signal that was raised (should be `SessionNew`)
+/// @param parameters parameters of the raised signal
+/// @param user_data custom user data sent through with the event which is ignored for this method
 void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const gchar *object_path,
     const gchar *interface_name, const gchar *signal_name, GVariant *parameters,
     gpointer user_data) {
@@ -39,6 +48,7 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
     perror(NULL);
   }
 }
+
 
 int main(int argc, char *argv[]) {
   if (argc != 1) {

@@ -27,12 +27,13 @@ void show_usage(const char *script_name) {
 ///        If there are multiple for the user, then the first one in the list is returned.
 /// @param connection the `GBusConnection` object for the system D-Bus
 /// @param user_id the numeric ID of the user
-/// @return the `path` of the selected session (e.g. `/org/freedesktop/login1/session/_3337`)
+/// @return the `path` of the selected session (e.g. `/org/freedesktop/login1/session/_3337`);
+///         the returned string should be released with `g_free()` after use
 gchar *select_session(GDBusConnection *connection, uid_t user_id) {
   // This uses ListSessions and then iterates through the returned list.
   // Another option can be to use introspection on the root of sessions then traverse the XML
-  // output which will take a single call, but that was not chosen since XML traversal is
-  // unnecessarily complex.
+  // output which will take a single D-Bus call, but that was not chosen since XML traversal
+  // would be unnecessarily long and complex.
   GError *error = NULL;
   GVariant *sessions = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME, LOGIN_OBJECT_PATH,
       LOGIN_MANAGER_INTERFACE, "ListSessions", NULL, NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
@@ -43,7 +44,7 @@ gchar *select_session(GDBusConnection *connection, uid_t user_id) {
     return NULL;
   }
 
-  gchar *session_path = NULL;
+  gchar *session_path = NULL, *session_selected = NULL;
   guint32 uid = -1;
   GVariantIter *iter = NULL;
   // pick the first session that matches: user_id, Type=x11|wayland, Remote=false, Active=true
@@ -52,14 +53,15 @@ gchar *select_session(GDBusConnection *connection, uid_t user_id) {
     if (user_id != uid) continue;    // skip other users
 
     if (session_valid_for_unlock(connection, session_path, NULL)) {
-      // returning this session_path hence don't g_free() unlike other cases when
-      // breaking out of g_variant_iter_loop() requires explicit g_free()
+      // returning this session_path hence don't `g_free()` unlike other cases when
+      // breaking out of `g_variant_iter_loop()` requires explicit `g_free()`
+      session_selected = session_path;
       break;
     }
   }
   g_variant_iter_free(iter);
   g_variant_unref(sessions);
-  return session_path;
+  return session_selected;
 }
 
 /// @brief Check if given session is locked (i.e. `LockedHint` is true)
@@ -78,6 +80,7 @@ bool is_locked(GDBusConnection *connection, const char *session_path) {
     return true;
   }
 
+  // extract boolean value wrapped inside the variant
   GVariant *locked_variant = NULL;
   g_variant_get(result, "(v)", &locked_variant);
   bool locked = g_variant_get_boolean(locked_variant);
@@ -137,7 +140,8 @@ guint32 get_dbus_service_process_id(const char *dbus_api, bool log_error) {
 /// @param path path of the file for which SHA-512 hash has to be calculated
 /// @param hash_buffer fill the SHA-512 hash as a hexadecimal string with terminating null
 /// @param buffer_size total size of the passed `hash_buffer`
-/// @return length of the `hash_buffer` excluding terminating null, or 0 in case of failure
+/// @return length of the filled `hash_buffer` excluding terminating null, else 0 in case of failure
+///         or if the buffer is not large enough
 size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
   int fd = open(path, O_RDONLY);
   if (fd == -1) {
@@ -145,11 +149,12 @@ size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
     return 0;
   }
 
+  // read data from the file in chunks and keep updating the checksum
   unsigned char buffer[32768];
   ssize_t bytes_read;
   unsigned char hash[EVP_MAX_MD_SIZE];
   unsigned int hash_len;
-  // keep on heap to maintain compatibility in case of EVP_MD_CTX struct size change
+  // keep on heap to maintain compatibility in the case of change in size of EVP_MD_CTX struct
   EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
   EVP_DigestInit_ex(md_ctx, EVP_sha512(), NULL);
   while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0) {
@@ -157,23 +162,25 @@ size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
   }
   if (bytes_read == -1) {
     perror("sha512sum() failed to read file");
-    close(fd);
-    return 0;
+  } else {
+    EVP_DigestFinal_ex(md_ctx, hash, &hash_len);
   }
   close(fd);
-  EVP_DigestFinal_ex(md_ctx, hash, &hash_len);
   EVP_MD_CTX_free(md_ctx);
+  if (bytes_read == -1) return 0;
 
+  // convert bytes to hex string using sprintf which is not efficient but its a tiny fixed overhead
   size_t buf_len = 0;
-  for (size_t i = 0; i < hash_len && buf_len < buffer_size - 1; i++, buf_len += 2) {
+  for (size_t i = 0; i < hash_len; i++, buf_len += 2) {
+    if (buf_len >= buffer_size - 2) return 0;
     sprintf(hash_buffer + buf_len, "%02x", hash[i]);
   }
   hash_buffer[buf_len] = '\0';
   return buf_len;
 }
 
-/// @brief Unlock all the registered KDBX databases (using `keepassxc-unlock-setup`) of the
-///        given user using KeePassXC's D-Bus API.
+/// @brief Unlock all the KDBX databases that were registered (using `keepassxc-unlock-setup`)
+///        of the given user using KeePassXC's D-Bus API.
 /// @param user_id the numeric ID of the user
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param session_path path of the selected session
@@ -188,65 +195,70 @@ void unlock_databases(
 
   // point DBUS_SESSION_BUS_ADDRESS to the user's session dbus
   char dbus_address[128], user_conf_dir[100];
+  // TODO: obtain this from /proc/<pid>/environ of the lead process of the session
   snprintf(dbus_address, sizeof(dbus_address), "unix:path=/run/user/%d/bus", user_id);
   snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%d", KP_CONFIG_DIR, user_id);
   setenv("DBUS_SESSION_BUS_ADDRESS", dbus_address, 1);
 
-  bool kp_exe_verified = false;
+  // loop till `wait_secs` to get the ID of the process providing KeePassXC's D-Bus API
+  guint32 kp_pid = 0;
   for (int i = 0; i < wait_secs; i++) {
-    // check the process accepting the KeePassXC D-Bus messages and verify its checksum
+    // switch effective ID to the user before connecting since this is the user's session bus
     change_euid(user_id);
-    // log error on the last iteration
-    guint32 kp_pid = get_dbus_service_process_id(KP_DBUS_INTERFACE, i == wait_secs - 1);
+    // log connection error only in the last iteration
+    kp_pid = get_dbus_service_process_id(KP_DBUS_INTERFACE, i == wait_secs - 1);
     change_euid(0);
-    if (kp_pid == 0) {
-      sleep(1);
-      continue;
-    }
-    char expected_sha512[SHA512_BUFFER_SIZE], current_sha512[SHA512_BUFFER_SIZE];
-    char kp_sha512_file[128], kp_exe[128];
-    snprintf(kp_sha512_file, sizeof(kp_sha512_file), "%s/keepassxc.sha512", user_conf_dir);
-    FILE *file = fopen(kp_sha512_file, "r");
-    if (!file) {
-      print_error("Skipping unlock due to missing %s - run 'sudo keepassxc-unlock-setup'\n",
-          kp_sha512_file);
-      return;
-    }
-    snprintf(kp_exe, sizeof(kp_exe), "/proc/%d/exe", kp_pid);
-    bool mismatch = sha512sum(kp_exe, current_sha512, SHA512_BUFFER_SIZE) == 0;
-    mismatch = mismatch || !fgets(expected_sha512, sizeof(expected_sha512), file) ||
-               (expected_sha512[strcspn(expected_sha512, "\n")] = '\0',
-                   g_strcmp0(current_sha512, expected_sha512) != 0);
-    fclose(file);
-    if (mismatch) {
-      char kp_exe_full[PATH_MAX], *kp_exe_real = kp_exe;
-      ssize_t kp_full_len = readlink(kp_exe, kp_exe_full, sizeof(kp_exe_full) - 1);
-      if (kp_full_len > 0) {
-        kp_exe_full[kp_full_len] = '\0';
-        kp_exe_real = kp_exe_full;
-      }
-      print_error("\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID %d EXE %s)"
-                  "\033[00m\n",
-          kp_pid, kp_exe_real);
-      char notify_cmd[PATH_MAX * 2];
-      snprintf(notify_cmd, sizeof(notify_cmd),
-          "runuser -u `id -un %d` -- notify-send -i system-lock-screen -u critical -t 0 "
-          "'Checksum mismatch in keepassxc' 'If KeePassXC has been updated, then run "
-          "\"sudo keepassxc-unlock-setup ...\" for one of the KDBX databases.\nOtherwise this "
-          "could be an unknown process snooping on D-Bus.\nThe offending process ID is %d "
-          "having executable pointing to %s'",
-          user_id, kp_pid, kp_exe_real);
-      if (system(notify_cmd) != 0) {
-        perror("unlock_databases() failed to notify-send for SHA-512 mismatch");
-      }
-      return;
-    } else {
-      kp_exe_verified = true;
-    }
-    break;
+    if (kp_pid != 0) break;
+    sleep(1);
   }
-  if (!kp_exe_verified) {
-    print_error("Failed to verify KeePassXC executable within %d secs\n", wait_secs);
+  if (kp_pid == 0) {
+    print_error("Failed to connect to KeePassXC D-Bus API within %d secs\n", wait_secs);
+    return;
+  }
+
+  // get the executable's SHA-512 hash from /proc/<pid>/exe and compare against the
+  // recorded good checksum
+  char expected_sha512[SHA512_BUFFER_SIZE], current_sha512[SHA512_BUFFER_SIZE];
+  char kp_sha512_file[128], kp_exe[128];
+  snprintf(kp_sha512_file, sizeof(kp_sha512_file), "%s/keepassxc.sha512", user_conf_dir);
+  FILE *file = fopen(kp_sha512_file, "r");
+  if (!file) {
+    print_error(
+        "Skipping unlock due to missing %s - run 'sudo keepassxc-unlock-setup'\n", kp_sha512_file);
+    return;
+  }
+  snprintf(kp_exe, sizeof(kp_exe), "/proc/%d/exe", kp_pid);
+  bool mismatch = sha512sum(kp_exe, current_sha512, SHA512_BUFFER_SIZE) == 0;
+  // use `fgets` to read the sha512 file which is expected to have only one line
+  // and replace terminating newline using `strcspn` (which works even if there was no newline)
+  mismatch = mismatch || !fgets(expected_sha512, sizeof(expected_sha512), file) ||
+             (expected_sha512[strcspn(expected_sha512, "\n")] = '\0',
+                 g_strcmp0(current_sha512, expected_sha512) != 0);
+  fclose(file);
+  if (mismatch) {
+    // `kp_exe_full` stores the actual executable that /proc/<pid>/exe points to, while
+    // `kp_exe_real` will either point to it or /proc/<pid>/exe in case `readlink` was unsuccessful
+    char kp_exe_full[PATH_MAX], *kp_exe_real = kp_exe;
+    ssize_t kp_full_len = readlink(kp_exe, kp_exe_full, sizeof(kp_exe_full) - 1);
+    if (kp_full_len > 0) {
+      kp_exe_full[kp_full_len] = '\0';
+      kp_exe_real = kp_exe_full;
+    }
+    print_error("\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID %d EXE %s)"
+                "\033[00m\n",
+        kp_pid, kp_exe_real);
+    char notify_cmd[PATH_MAX * 2];
+    // TODO: use notification dbus API for below instead of notify-send which may not be present
+    snprintf(notify_cmd, sizeof(notify_cmd),
+        "runuser -u `id -un %d` -- notify-send -i system-lock-screen -u critical -t 0 "
+        "'Checksum mismatch in keepassxc' 'If KeePassXC has been updated, then run "
+        "\"sudo keepassxc-unlock-setup ...\" for one of the KDBX databases.\nOtherwise this "
+        "could be an unknown process snooping on D-Bus.\nThe offending process ID is %d "
+        "having executable pointing to %s'",
+        user_id, kp_pid, kp_exe_real);
+    if (system(notify_cmd) != 0) {
+      perror("unlock_databases() failed to notify-send for SHA-512 mismatch");
+    }
     return;
   }
 
@@ -254,8 +266,8 @@ void unlock_databases(
   snprintf(conf_pattern, sizeof(conf_pattern), "%s/*.conf", user_conf_dir);
   glob_t globbuf;
   if (glob(conf_pattern, 0, NULL, &globbuf) == 0) {
-    for (size_t i = 0; i < globbuf.gl_pathc; i++) {
-      memset(decrypted_passwd, 0, MAX_PASSWORD_SIZE);
+    // clear decrypted_passwd in every loop even if the loop condition fails
+    for (size_t i = 0; memset(decrypted_passwd, 0, MAX_PASSWORD_SIZE), i < globbuf.gl_pathc; i++) {
       char *conf_path = globbuf.gl_pathv[i];
       FILE *file = fopen(conf_path, "r");
       if (!file) {
@@ -296,18 +308,13 @@ void unlock_databases(
         perror("Failed to run systemd-creds for decryption");
         continue;
       }
-      size_t bytes_read, total_bytes_read = 0;
-      while (total_bytes_read < MAX_PASSWORD_SIZE &&
-             (bytes_read = fread(decrypted_passwd + total_bytes_read, 1,
-                  MAX_PASSWORD_SIZE - total_bytes_read, pipe)) > 0) {
-        total_bytes_read += bytes_read;
-      }
-      if (total_bytes_read >= MAX_PASSWORD_SIZE) {
+      size_t bytes_read = fread(decrypted_passwd, 1, MAX_PASSWORD_SIZE, pipe);
+      pclose(pipe);
+      if (bytes_read == MAX_PASSWORD_SIZE) {
         print_error("Password for '%s' exceeds %u characters!\n", kdbx_file, MAX_PASSWORD_SIZE - 1);
         continue;
       }
-      decrypted_passwd[total_bytes_read] = '\0';
-      pclose(pipe);
+      decrypted_passwd[bytes_read] = '\0';
 
       change_euid(user_id);
       GError *error = NULL;
@@ -353,7 +360,8 @@ typedef struct {
 /// @param interface_name D-Bus interface of the raised signal
 /// @param signal_name name of the D-Bus signal that was raised
 /// @param parameters parameters of the raised signal
-/// @param user_data custom user data sent through with the event
+/// @param user_data custom user data sent through with the event which should be pointer to
+///                  `session_loop_data`
 void handle_session_event(GDBusConnection *conn, const char *sender_name, const char *object_path,
     const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data) {
   session_loop_data *session_data = (session_loop_data *)user_data;
@@ -386,9 +394,8 @@ void handle_session_end(GDBusConnection *conn, const char *sender_name, const ch
     const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data) {
   session_loop_data *session_data = (session_loop_data *)user_data;
   char *removed_session_path = "";
-  g_variant_get(parameters, "(so)", NULL, &removed_session_path);
+  g_variant_get(parameters, "(s&o)", NULL, &removed_session_path);    // &o avoids `g_free()`
   bool session_removed = g_strcmp0(removed_session_path, session_data->session_path) == 0;
-  g_free(removed_session_path);
   if (session_removed) {
     print_info("Exit on session end for %s\n", session_data->session_path);
     g_main_loop_quit(session_data->loop);
