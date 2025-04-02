@@ -44,7 +44,8 @@ install: $(TARGETS)
 	install -m 0755 $(TARGETS) $(INSTALL_BIN_DIR)/
 	install -m 0644 $(SERVICES) /etc/systemd/system/
 	systemctl daemon-reload
-	systemctl enable --now $(LOGIN_SERVICE)
+	systemctl enable $(LOGIN_SERVICE)
+	systemctl start $(LOGIN_SERVICE)
 
 uninstall:
 	for target in $(TARGETS); do \

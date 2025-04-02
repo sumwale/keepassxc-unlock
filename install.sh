@@ -50,6 +50,7 @@ tmp_dir=$(mktemp -d)
 trap "/bin/rm -rf $tmp_dir" 0 1 2 3 4 5 6 11 12 15
 
 echo -e "${fg_orange}Fetching executables and installing in /usr/local/sbin$fg_reset"
+sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || /bin/true
 for file in $sbin_files; do
   $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
 done
@@ -81,8 +82,8 @@ echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
 sudo systemctl daemon-reload
 
 echo -e "${fg_orange}Enabling and starting login monitor service$fg_reset"
-sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || /bin/true
-sudo systemctl enable --now keepassxc-login-monitor.service
+sudo systemctl enable keepassxc-login-monitor.service
+sudo systemctl start keepassxc-login-monitor.service
 
 echo -e "${fg_cyan}Fetching LICENSE and doc files and installing in /usr/local/share/doc$fg_reset"
 for file in $doc_files; do
