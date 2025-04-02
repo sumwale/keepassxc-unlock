@@ -81,6 +81,7 @@ echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
 sudo systemctl daemon-reload
 
 echo -e "${fg_orange}Enabling and starting login monitor service$fg_reset"
+sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || /bin/true
 sudo systemctl enable --now keepassxc-login-monitor.service
 
 echo -e "${fg_cyan}Fetching LICENSE and doc files and installing in /usr/local/share/doc$fg_reset"
