@@ -2,7 +2,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "keepassxc-unlock-common.h"
+#include "common.h"
 
 bool user_has_db_configs(guint32 user_id) {
   char conf_pattern[128];

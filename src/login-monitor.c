@@ -1,6 +1,6 @@
 #include <gio/gio.h>
 
-#include "keepassxc-unlock-common.h"
+#include "common.h"
 
 /// @brief Callback for creation of a new session that checks if it is a valid target for auto-lock
 ///        and if so, then starts user-specific `keepassxc-unlock@<uid>.service` to handle the same.

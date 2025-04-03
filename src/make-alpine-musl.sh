@@ -9,4 +9,4 @@ apk cache purge
 cd /build
 make all-static STATIC_LIBS="-lpcre2-8 -lffi -lz -lintl -lmount -lblkid -leconf"
 strip -g *-`uname -m`-static
-chown --reference keepassxc-unlock.c *-static
+chown --reference unlock.c *-static

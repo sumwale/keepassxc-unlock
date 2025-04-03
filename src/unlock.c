@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "keepassxc-unlock-common.h"
+#include "common.h"
 
 #define SHA512_BUFFER_SIZE EVP_MAX_MD_SIZE * 2 + 1
 #define MAX_PASSWORD_SIZE 4096    // maximum allowed size of decrypted password plus one for null
