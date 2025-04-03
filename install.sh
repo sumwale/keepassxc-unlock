@@ -92,6 +92,38 @@ sudo install -D -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root
 rm -f $tmp_dir/*
 
 echo
+echo -e "${fg_orange}Start user-specific auto-unlock service? This will only work if"
+echo "this is an upgrade and KDBX databases have already been registered using"
+echo "keepassxc-unlock-setup previously and KeePassXC is running in the current session."
+echo -en "${fg_cyan}Proceed? (y/N) $fg_reset"
+set +e
+read -r resp < /dev/tty
+set -e
+if [ "$resp" = y -o "$resp" = Y ]; then
+  # find the session path for this session, write to session.env and start the service
+  uid=$(id -u)
+  session_id=$(dbus-send --system --print-reply --type=method_call \
+    --dest=org.freedesktop.login1 /org/freedesktop/login1/session/auto \
+    org.freedesktop.DBus.Properties.Get string:org.freedesktop.login1.Session string:Id | \
+    sed -n 's/.*string "\([0-9]\+\).*/\1/p')
+  if [ -n "$session_id" ]; then
+    session_path=$(dbus-send --system --print-reply --type=method_call \
+      --dest=org.freedesktop.login1 /org/freedesktop/login1 \
+      org.freedesktop.login1.Manager.GetSession "string:$session_id" | \
+      sed -n 's/.*object path "\([^"]*\).*/\1/p')
+    if [ -n "$session_path" ]; then
+      echo "SESSION_PATH=$session_path" | sudo tee /etc/keepassxc-unlock/$uid/session.env
+      service_name=keepassxc-unlock@$uid.service
+      echo -e "${fg_orange}Starting $service_name$fg_reset"
+      sudo systemctl stop $service_name 2>/dev/null || /bin/true
+      sudo systemctl start $service_name || /bin/true
+    else
+      echo -e "${fg_red}Failed to determine current session's path$fg_reset"
+    fi
+  fi
+fi
+
+echo
 echo -e "${fg_green}Installation complete."
 echo
 echo "Run keepassxc-unlock-setup as root to register users' KeePassXC databases to be auto-unlocked."
