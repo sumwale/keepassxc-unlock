@@ -26,12 +26,7 @@ if [ "$resp" != y -a "$resp" != Y ]; then
   exit 1
 fi
 
-echo -e "${fg_orange}Removing executables from /usr/local/sbin$fg_reset"
-for file in $sbin_files $old_sbin_files; do
-  sudo rm -f /usr/local/sbin/$file
-done
-
-echo -e "${fg_orange}Stopping systemd services and removing the service file$fg_reset"
+echo -e "${fg_orange}Stopping systemd services and removing the service files$fg_reset"
 for unit in $(sudo systemctl -q list-units 'keepassxc-unlock@*.service' | awk '{ print $1 }'); do
   echo -e "$fg_orange  Stopping service '$unit'$fg_reset"
   sudo systemctl stop "$unit"
@@ -46,6 +41,11 @@ for file in $service_files; do
 done
 echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
 sudo systemctl daemon-reload
+
+echo -e "${fg_orange}Removing executables from /usr/local/sbin$fg_reset"
+for file in $sbin_files $old_sbin_files; do
+  sudo rm -f /usr/local/sbin/$file
+done
 
 echo -e "${fg_orange}Removing LICENSE and doc files from /usr/local/share/doc$fg_reset"
 sudo rm -rf /usr/local/share/doc/keepassxc-unlock /usr/local/share/doc/$old_package

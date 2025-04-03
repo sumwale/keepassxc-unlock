@@ -14,17 +14,15 @@
 void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const gchar *object_path,
     const gchar *interface_name, const gchar *signal_name, GVariant *parameters,
     gpointer user_data) {
-  gchar *session_path = NULL;
+  gchar *session_id = NULL, *session_path = NULL;
   // extract session path from the parameters
-  g_variant_get(parameters, "(so)", NULL, &session_path);
+  g_variant_get(parameters, "(&s&o)", &session_id, &session_path);
 
   // check if the session can be a target for auto-unlock and also get the owner
   print_info(
       "Checking if session '%s' can be auto-unlocked and looking up its owner\n", session_path);
   guint32 user_id = 0;
-  bool session_valid = session_valid_for_unlock(conn, session_path, &user_id);
-  g_free(session_path);
-  if (!session_valid) {
+  if (!session_valid_for_unlock(conn, session_path, 0, &user_id, NULL, NULL)) {
     print_info("Ignoring session which is not a valid target for auto-unlock\n");
     return;
   }
@@ -32,15 +30,15 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
   // check if the user has any databases configured for auto-unlock
   if (!user_has_db_configs(user_id)) {
     print_error(
-        "Ignoring session as no KDBX databases have been configured for auto-unlock for UID=%u\n",
+        "Ignoring session as no KDBX databases have been configured for auto-unlock by UID=%u\n",
         user_id);
     return;
   }
 
   // start the systemd service for the user which gets instantiated from the template service
   char service_cmd[1024];
-  snprintf(
-      service_cmd, sizeof(service_cmd), "systemctl start keepassxc-unlock@%u.service", user_id);
+  snprintf(service_cmd, sizeof(service_cmd), "systemctl start 'keepassxc-unlock@%u:%s.service'",
+      user_id, session_id);
   print_info("Executing: %s\n", service_cmd);
   if (system(service_cmd) != 0) {
     print_error(

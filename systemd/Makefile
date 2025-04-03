@@ -18,9 +18,7 @@ all: $(TARGETS)
 
 all-static: $(TARGETS_STATIC)
 
-%.c: keepassxc-unlock-common.h
-
-$(TARGETS): %: %.c keepassxc-unlock-common.c
+$(TARGETS): %: %.c keepassxc-unlock-common.c keepassxc-unlock-common.h
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 $(TARGETS_STATIC): %-$(ARCH)-static: %.c keepassxc-unlock-common.c
@@ -48,14 +46,14 @@ install: $(TARGETS)
 	systemctl start $(LOGIN_SERVICE)
 
 uninstall:
-	for target in $(TARGETS); do \
-		rm -f $(INSTALL_BIN_DIR)/$${target}; \
-	done
 	for unit in `systemctl -q list-units 'keepassxc-unlock@*.service' | awk '{ print $$1 }'`; do \
 		systemctl stop "$$unit"; \
 	done
 	systemctl stop $(LOGIN_SERVICE) || /bin/true
 	systemctl disable $(LOGIN_SERVICE) || /bin/true
+	for target in $(TARGETS); do \
+		rm -f $(INSTALL_BIN_DIR)/$${target}; \
+	done
 	for service in $(SERVICES); do \
 		rm -f /etc/systemd/system/$${service}; \
 	done
