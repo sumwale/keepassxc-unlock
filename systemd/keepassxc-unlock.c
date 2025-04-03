@@ -19,43 +19,9 @@ void show_usage(const char *script_name) {
   printf("\nMonitor a session for login and screen unlock events to unlock configured KeepassXC "
          "databases\n");
   printf("\nArguments:\n");
-  printf("  <USER_ID>:<SESSION_ID>    numeric ID of user and the session ID to be monitored\n\n");
+  printf("  <USER_ID>       numeric ID of user who owns the session to be monitored\n\n");
+  printf("  <SESSION_ID>    the session ID to be monitored\n\n");
   fflush(stdout);
-}
-
-/// @brief Get the path of a session (e.g. `/org/freedesktop/login1/session/_3337`) with given ID.
-///        Also fetch the `Type` and `Display` properties of the session.
-/// @param connection the `GBusConnection` object for the system D-Bus
-/// @param user_id the numeric ID of the user
-/// @param session_id the ID of the session
-/// @param is_wayland pointer to `bool` which (if non-NULL) is filled with `true` when session
-///                   type is `wayland` else with `false` when it is `x11`
-/// @param display pointer to `gchar*` string that is filled with the value of `Display` property
-///                of the session if non-NULL; this should be released with `g_free()` after use
-/// @return the path of the session with given ID (e.g. `/org/freedesktop/login1/session/_3337`)
-///         if it is a valid local and active X11/Wayland session else NULL; the returned string
-///         should be released with `g_free()` after use
-gchar *get_session_path_if_valid(GDBusConnection *connection, gint32 user_id,
-    const gchar *session_id, bool *is_wayland, gchar **display) {
-  GError *error = NULL;
-  GVariant *result = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME, LOGIN_OBJECT_PATH,
-      LOGIN_MANAGER_INTERFACE, "GetSession", g_variant_new("(s)", session_id), NULL,
-      G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
-  if (!result) {
-    print_error("Failed to get session path for ID='%s': %s\n", session_id,
-        error ? error->message : "(null)");
-    g_clear_error(&error);
-    return NULL;
-  }
-
-  gchar *session_path = NULL;
-  g_variant_get(result, "(o)", &session_path);
-  g_variant_unref(result);
-  // check for session validity and also fetch whether session type is X11 or Wayland (`is_wayland`
-  //   argument) along with the value for `$DISPLAY` when it is X11 (`display` argument)
-  return session_valid_for_unlock(connection, session_path, user_id, NULL, is_wayland, display)
-             ? session_path
-             : (g_free(session_path), NULL);
 }
 
 /// @brief Check if given session is locked (i.e. `LockedHint` is true)
@@ -90,10 +56,10 @@ bool is_locked(GDBusConnection *connection, const char *session_path) {
 void change_euid(uid_t uid) {
   if (geteuid() == uid) return;
   if (seteuid(uid) != 0) {
-    print_error("Failed in seteuid to %d: ", uid);
+    print_error("\033[1;33mchange_euid() failed in seteuid to %u: \033[00m", uid);
     perror(NULL);
     if (uid == 0) {    // failed to switch back to root?
-      print_error("\033[1;31mCannot switch back to root, terminating...\033[00m");
+      print_error("\033[1;31mCannot switch back to root, terminating...\033[00m\n");
       exit(1);
     }
   }
@@ -188,7 +154,7 @@ bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar *displa
     // to check if this is the same Wayland session (multiple Wayland sessions break stuff in many
     //   ways in any case) so just check that $WAYLAND_DISPLAY is not non-empty
     env_value = get_process_env_var(kp_pid, "WAYLAND_DISPLAY");
-    success = env_value != NULL && env_value[0] != '\0';
+    success = env_value && *env_value != '\0';
   } else {
     // for the case of X11, the value of $DISPLAY should match the passed `Display` session property
     env_value = get_process_env_var(kp_pid, "DISPLAY");
@@ -215,7 +181,7 @@ bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32
         "Skipping unlock due to missing %s - run 'sudo keepassxc-unlock-setup'\n", kp_sha512_file);
     return false;
   }
-  snprintf(kp_exe, sizeof(kp_exe), "/proc/%d/exe", kp_pid);
+  snprintf(kp_exe, sizeof(kp_exe), "/proc/%u/exe", kp_pid);
   bool mismatch = sha512sum(kp_exe, current_sha512, SHA512_BUFFER_SIZE) == 0;
   // use `fgets` to read the sha512 file which is expected to have only one line
   // and replace terminating newline using `strcspn` (which works even if there was no newline)
@@ -232,16 +198,16 @@ bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32
       kp_exe_full[kp_full_len] = '\0';
       kp_exe_real = kp_exe_full;
     }
-    print_error("\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID %d EXE %s)"
+    print_error("\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID %u EXE %s)"
                 "\033[00m\n",
         kp_pid, kp_exe_real);
     char notify_cmd[PATH_MAX * 2];
     // TODO: use notification dbus API for below instead of notify-send which may not be present
     snprintf(notify_cmd, sizeof(notify_cmd),
-        "runuser -u `id -un %d` -- notify-send -i system-lock-screen -u critical -t 0 "
+        "runuser -u `id -un %u` -- notify-send -i system-lock-screen -u critical -t 0 "
         "'Checksum mismatch in keepassxc' 'If KeePassXC has been updated, then run "
         "\"sudo keepassxc-unlock-setup ...\" for one of the KDBX databases.\nOtherwise this "
-        "could be an unknown process snooping on D-Bus.\nThe offending process ID is %d "
+        "could be an unknown process snooping on D-Bus.\nThe offending process ID is %u "
         "having executable pointing to %s'",
         user_id, kp_pid, kp_exe_real);
     if (system(notify_cmd) != 0) {
@@ -294,7 +260,7 @@ void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *s
 
   // verify the KeePassXC executable's checksum
   char user_conf_dir[100];
-  snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%d", KP_CONFIG_DIR, user_id);
+  snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%u", KP_CONFIG_DIR, user_id);
   if (!verify_process_exe_sha512(user_conf_dir, user_id, kp_pid)) return;
 
   char conf_pattern[128], decrypted_passwd[MAX_PASSWORD_SIZE];
@@ -329,9 +295,14 @@ void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *s
       }
       fclose(file);
 
+      if (*kdbx_file == '\0') {
+        print_error("Skipping invalid KDBX unlock configuration file '%s'\n", conf_path);
+        continue;
+      }
+
       char conf_name[128] = {0}, decrypt_cmd[256];
       char *conf_name_p, *conf_filename = strrchr(conf_path, '/');
-      if (conf_filename != NULL && (conf_name_p = strstr(conf_filename + 1, ".conf")) != NULL) {
+      if (conf_filename && (conf_name_p = strstr(conf_filename + 1, ".conf")) != NULL) {
         size_t conf_name_len = conf_name_p - conf_filename - 1;
         strncpy(conf_name, conf_filename + 1, MIN(conf_name_len, sizeof(conf_name)));
       }
@@ -446,30 +417,27 @@ int main(int argc, char *argv[]) {
     print_error("This program must be run as root\n");
     return 1;
   }
-
-  // search the first argument for `:`
-  const char *session_id;
-  if (argc != 2 || (session_id = strchr(argv[1], ':')) == NULL) {
+  if (argc != 3) {
     show_usage(argv[0]);
     return 1;
   }
 
-  // check if the given argument has a valid numeric user ID
+  // check if the first argument has a valid numeric user ID
   struct passwd *pwd = NULL;
   char *user_end = NULL;
   uid_t user_id = strtoul(argv[1], &user_end, 10);
-  if (argv[1][0] != '\0' && user_end == session_id) pwd = getpwuid(user_id);
+  if (argv[1][0] != '\0' && *user_end == '\0') pwd = getpwuid(user_id);
   if (!pwd) {
-    print_error("Invalid user ID before colon in '%s'\n", argv[1]);
+    print_error("Invalid user ID %s\n", argv[1]);
     return 1;
   }
   user_id = pwd->pw_uid;
-  session_id++;
+  const char *session_path = argv[2];
 
   // check if there are any database configuration files for the user
   if (!user_has_db_configs(user_id)) {
     print_error(
-        "No configuration found for UID=%d - run 'sudo keepassxc-unlock-setup ...'\n", user_id);
+        "No configuration found for UID=%u - run 'sudo keepassxc-unlock-setup ...'\n", user_id);
     return 0;
   }
 
@@ -484,13 +452,12 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // get the session path, type and the display for the session
-  gchar *session_path = NULL, *display = NULL;
+  // get the session `Type` and `Display` properties
+  gchar *display = NULL;
   bool is_wayland = false;
-  if ((session_path = get_session_path_if_valid(
-           connection, user_id, session_id, &is_wayland, &display)) == NULL) {
+  if (!session_valid_for_unlock(connection, session_path, user_id, NULL, &is_wayland, &display)) {
     print_error(
-        "No valid X11/Wayland session found for UID=%u with sessionID='%s'\n", user_id, session_id);
+        "No valid X11/Wayland session found for UID=%u sessionPath='%s'\n", user_id, session_path);
     g_object_unref(connection);
     return 0;
   }
@@ -498,7 +465,7 @@ int main(int argc, char *argv[]) {
   // point DBUS_SESSION_BUS_ADDRESS to the user's session dbus
   char dbus_address[128];
   // TODO: obtain this from /proc/<pid>/environ of the lead process of the session
-  snprintf(dbus_address, sizeof(dbus_address), "unix:path=/run/user/%d/bus", user_id);
+  snprintf(dbus_address, sizeof(dbus_address), "unix:path=/run/user/%u/bus", user_id);
   setenv("DBUS_SESSION_BUS_ADDRESS", dbus_address, 1);
 
   // unlock on startup since this program should be invoked on user session start
@@ -540,7 +507,6 @@ int main(int argc, char *argv[]) {
   // cleanup
   g_object_unref(connection);
   g_main_loop_unref(loop);
-  g_free(session_path);
   g_free(display);
 
   return exit_code;

@@ -9,7 +9,7 @@ bool user_has_db_configs(guint32 user_id) {
   glob_t globbuf;
 
   // construct the configuration directory and pattern
-  snprintf(conf_pattern, sizeof(conf_pattern), "%s/%d/*.conf", KP_CONFIG_DIR, user_id);
+  snprintf(conf_pattern, sizeof(conf_pattern), "%s/%u/*.conf", KP_CONFIG_DIR, user_id);
 
   // check if there are any configuration files in the user-specific configuration directory
   bool has_configs = glob(conf_pattern, 0, NULL, &globbuf) == 0 && globbuf.gl_pathc > 0;
@@ -44,22 +44,22 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
       user_match = true;
       guint32 user_id = 0;
       g_variant_get(value, "(uo)", &user_id, NULL);
-      if (out_uid_ptr != NULL) {
+      if (out_uid_ptr) {
         *out_uid_ptr = user_id;
       } else if (check_uid != user_id) {
-        print_error("Session not valid due to mismatch in given user ID %u from actual owner %u",
+        print_error("Session not valid due to mismatch in given user ID %u from actual owner %u\n",
             check_uid, user_id);
         user_match = false;
       }
     } else if (g_strcmp0(key, "Display") == 0) {
-      if (display_ptr != NULL) g_variant_get(value, "s", display_ptr);
+      if (display_ptr) g_variant_get(value, "s", display_ptr);
     } else if (g_strcmp0(key, "Remote") == 0) {
       is_remote = g_variant_get_boolean(value);
     } else if (g_strcmp0(key, "Type") == 0) {
       const char *type_val = g_variant_get_string(value, NULL);
       bool is_wayland = g_strcmp0(type_val, "wayland") == 0;
       has_supported_type = is_wayland || g_strcmp0(type_val, "x11") == 0;
-      if (has_supported_type && is_wayland_ptr != NULL) *is_wayland_ptr = is_wayland;
+      if (has_supported_type && is_wayland_ptr) *is_wayland_ptr = is_wayland;
     } else if (g_strcmp0(key, "Active") == 0) {
       is_active = g_variant_get_boolean(value);
     }
@@ -71,7 +71,7 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   if (user_match && has_supported_type && !is_remote && is_active) {
     return true;
   } else {
-    if (display_ptr != NULL && *display_ptr != NULL) g_free(*display_ptr);
+    if (display_ptr && *display_ptr) g_free(*display_ptr);
     return false;
   }
 }

@@ -14,9 +14,9 @@
 void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const gchar *object_path,
     const gchar *interface_name, const gchar *signal_name, GVariant *parameters,
     gpointer user_data) {
-  gchar *session_id = NULL, *session_path = NULL;
+  gchar *session_path = NULL;
   // extract session path from the parameters
-  g_variant_get(parameters, "(&s&o)", &session_id, &session_path);
+  g_variant_get(parameters, "(s&o)", NULL, &session_path);
 
   // check if the session can be a target for auto-unlock and also get the owner
   print_info(
@@ -35,26 +35,44 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
     return;
   }
 
+  // write session.env for the service (extension should not be `.conf` which is for kdbx configs)
+  char session_env[128];
+  snprintf(session_env, sizeof(session_env), "%s/%u/session.env", KP_CONFIG_DIR, user_id);
+  FILE *session_env_fp = fopen(session_env, "w");
+  if (!session_env_fp) {
+    print_error(
+        "\033[1;33mhandle_new_session() failed to open '%s' for writing: \033[00m", session_env);
+    perror(NULL);
+    return;
+  }
+  // this can write different session paths for the same user but it doesn't matter since subsequent
+  // service starts for the same user will be ignored in any case (if the previous service is still
+  //   running) and the existing one will keep performing auto-unlock for its session
+  fprintf(session_env_fp, "SESSION_PATH=%s\n", session_path);
+  fclose(session_env_fp);
+
   // start the systemd service for the user which gets instantiated from the template service
   char service_cmd[1024];
-  snprintf(service_cmd, sizeof(service_cmd), "systemctl start 'keepassxc-unlock@%u:%s.service'",
-      user_id, session_id);
+  // deliberately have only one auto-unlock service for one user and not separate one for each
+  // session to avoid those interfering with one another (KeePassXC instance to session correlation
+  //   might be incorrect for multiple Wayland sessions)
+  snprintf(
+      service_cmd, sizeof(service_cmd), "systemctl start keepassxc-unlock@%u.service", user_id);
   print_info("Executing: %s\n", service_cmd);
   if (system(service_cmd) != 0) {
-    print_error(
-        "\033[1;33mhandle_users_and_sessions() failed to start '%s': \033[00m", service_cmd);
+    print_error("\033[1;33mhandle_new_session() failed to start '%s': \033[00m", service_cmd);
     perror(NULL);
   }
 }
 
 
 int main(int argc, char *argv[]) {
-  if (argc != 1) {
-    print_error("No arguments are expected");
-    return 1;
-  }
   if (geteuid() != 0) {
     print_error("This program must be run as root\n");
+    return 1;
+  }
+  if (argc != 1) {
+    print_error("No arguments are expected\n");
     return 1;
   }
 
