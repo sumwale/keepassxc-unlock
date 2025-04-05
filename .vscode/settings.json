@@ -4,6 +4,8 @@
         "gio.h": "c",
         "fcntl.h": "c",
         "stdlib.h": "c",
-        "types.h": "c"
+        "types.h": "c",
+        "common.h": "c",
+        "stdbool.h": "c"
     }
 }

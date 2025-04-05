@@ -69,18 +69,13 @@ void change_euid(uid_t uid) {
 ///        Since this uses the session bus, the call should be done after changing
 ///        the effective UID of this process to the target user.
 /// @param dbus_api the D-Bus API that the process has registered
-/// @param log_error if `true`, then D-Bus connection error is logged else not
+/// @param log_error if `true` then log D-Bus connection error to `stderr`
 /// @return the process ID registered for the D-Bus API or 0 if something went wrong
 guint32 get_dbus_service_process_id(const char *dbus_api, bool log_error) {
+  GDBusConnection *session_conn = dbus_connect(false, log_error);
+  if (!session_conn) return 0;
+
   GError *error = NULL;
-  GDBusConnection *session_conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
-  if (!session_conn) {
-    if (log_error) {
-      print_error("Failed to connect to session bus: %s\n", error ? error->message : "(null)");
-    }
-    g_clear_error(&error);
-    return 0;
-  }
   GVariant *result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.DBus", "/",
       "org.freedesktop.DBus", "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api), NULL,
       G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
@@ -88,6 +83,7 @@ guint32 get_dbus_service_process_id(const char *dbus_api, bool log_error) {
   if (result) {
     guint32 pid = 0;
     g_variant_get(result, "(u)", &pid);
+    g_variant_unref(result);
     return pid;
   } else {
     g_clear_error(&error);
@@ -137,6 +133,29 @@ size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
   }
   hash_buffer[buf_len] = '\0';
   return buf_len;
+}
+
+bool send_session_notification(const gchar *name, const gchar *icon, const gchar *summary,
+    const gchar *body, guint8 urgency, gint32 timeout) {
+  GDBusConnection *session_conn = dbus_connect(false, true);
+  if (!session_conn) return 0;
+
+  GVariantBuilder hints;
+  g_variant_builder_init(&hints, G_VARIANT_TYPE_VARDICT);
+  g_variant_builder_add(&hints, "{sv}", "urgency", g_variant_new_byte(urgency));
+  GError *error = NULL;
+  GVariant *result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.Notifications",
+      "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
+      g_variant_new("(susssasa{sv}i)", name, 0, icon, summary, body, NULL, &hints, timeout), NULL,
+      G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
+  g_object_unref(session_conn);
+  if (result) {
+    g_variant_unref(result);
+    return true;
+  } else {
+    g_clear_error(&error);
+    return false;
+  }
 }
 
 /// @brief Verify that the KeePassXC process belongs to the selected session. This is done by
@@ -198,21 +217,19 @@ bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32
       kp_exe_full[kp_full_len] = '\0';
       kp_exe_real = kp_exe_full;
     }
-    print_error("\033[1;33mAborting unlock due to checksum mismatch in keepassxc (PID %u EXE %s)"
-                "\033[00m\n",
+    g_critical("Aborting unlock due to checksum mismatch in keepassxc (PID %u EXE %s)", kp_pid,
+        kp_exe_real);
+    char notify_body[PATH_MAX * 2];
+    snprintf(notify_body, sizeof(notify_body),
+        "If KeePassXC has been updated, then run \"sudo keepassxc-unlock-setup ...\" for one of "
+        "the KDBX databases.\nOtherwise this could be an unknown process snooping on D-Bus.\nThe "
+        "offending process ID is %u having executable pointing to %s",
         kp_pid, kp_exe_real);
-    char notify_cmd[PATH_MAX * 2];
-    // TODO: use notification dbus API for below instead of notify-send which may not be present
-    snprintf(notify_cmd, sizeof(notify_cmd),
-        "runuser -u `id -un %u` -- notify-send -i system-lock-screen -u critical -t 0 "
-        "'Checksum mismatch in keepassxc' 'If KeePassXC has been updated, then run "
-        "\"sudo keepassxc-unlock-setup ...\" for one of the KDBX databases.\nOtherwise this "
-        "could be an unknown process snooping on D-Bus.\nThe offending process ID is %u "
-        "having executable pointing to %s'",
-        user_id, kp_pid, kp_exe_real);
-    if (system(notify_cmd) != 0) {
-      perror("unlock_databases() failed to notify-send for SHA-512 mismatch");
-    }
+    change_euid(user_id);
+    bool notified = send_session_notification("keepassxc-unlock", "system-lock-screen",
+        "Checksum mismatch in keepassxc", notify_body, 2, 0);
+    change_euid(0);
+    if (!notified) g_critical("Failed to send D-Bus notification to the user for SHA-512 mismatch");
     return false;
   }
   return true;
@@ -323,15 +340,12 @@ void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *s
       decrypted_passwd[bytes_read] = '\0';
 
       change_euid(user_id);
-      GError *error = NULL;
-      GDBusConnection *session_conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+      GDBusConnection *session_conn = dbus_connect(false, true);
       if (!session_conn) {
-        fprintf(
-            stderr, "Failed to connect to session bus: %s\n", error ? error->message : "(null)");
-        g_clear_error(&error);
         change_euid(0);
         continue;
       }
+      GError *error = NULL;
       GVariant *result = g_dbus_connection_call_sync(session_conn, KP_DBUS_INTERFACE, "/keepassxc",
           KP_DBUS_INTERFACE, "openDatabase",
           g_variant_new("(sss)", kdbx_file, decrypted_passwd, key_file), NULL,
@@ -444,13 +458,8 @@ int main(int argc, char *argv[]) {
   print_info("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
-  GError *error = NULL;
-  GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-  if (!connection) {
-    print_error("Failed to connect to system bus: %s\n", error ? error->message : "(null)");
-    g_clear_error(&error);
-    return 1;
-  }
+  GDBusConnection *connection = dbus_connect(true, true);
+  if (!connection) return 1;
 
   // get the session `Type` and `Display` properties
   gchar *display = NULL;
@@ -505,9 +514,9 @@ int main(int argc, char *argv[]) {
   }
 
   // cleanup
-  g_object_unref(connection);
   g_main_loop_unref(loop);
   g_free(display);
+  g_object_unref(connection);
 
   return exit_code;
 }

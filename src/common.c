@@ -4,6 +4,20 @@
 
 #include "common.h"
 
+GDBusConnection *dbus_connect(bool system_bus, bool log_error) {
+  GError *error = NULL;
+  GDBusConnection *connection =
+      g_bus_get_sync(system_bus ? G_BUS_TYPE_SYSTEM : G_BUS_TYPE_SESSION, NULL, &error);
+  if (!connection) {
+    if (log_error) {
+      print_error("Failed to connect to %s bus: %s\n", system_bus ? "system" : "session",
+          error ? error->message : "(null)");
+    }
+    g_clear_error(&error);
+  }
+  return connection;
+}
+
 bool user_has_db_configs(guint32 user_id) {
   char conf_pattern[128];
   glob_t globbuf;

@@ -29,6 +29,14 @@
     fflush(stderr);                                                                                \
   }
 
+/// @brief Connect to the global system or user's session D-Bus. Optionally display error on
+///        `stderr` if there was a connection failure.
+/// @param system_bus if `true` then connect to the system bus else to the user's session bus
+/// @param log_error if `true` then log connection error to `stderr`
+/// @return an instance of `GDBusConnection*` that may be shared among callers and must be released
+///         using `g_object_unref()`, or NULL if the connection was unsuccessful
+extern GDBusConnection *dbus_connect(bool system_bus, bool log_error);
+
 /// @brief Check whether a user has configured KDBX database(s) for auto-unlock.
 /// @param user_id the numeric ID of the user
 /// @return `true` if user has at least one KDBX database configured for auto-unlock else `false`

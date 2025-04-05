@@ -79,13 +79,8 @@ int main(int argc, char *argv[]) {
   print_info("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
-  GError *error = NULL;
-  GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-  if (!connection) {
-    print_error("Failed to connect to system bus: %s\n", error ? error->message : "(null)");
-    g_clear_error(&error);
-    return 1;
-  }
+  GDBusConnection *connection = dbus_connect(true, true);
+  if (!connection) return 1;
 
   // subscribe to `SessionNew` signal on org.freedesktop.login1
   guint subscription_id = g_dbus_connection_signal_subscribe(connection,
@@ -106,8 +101,8 @@ int main(int argc, char *argv[]) {
 
   // cleanup
   g_dbus_connection_signal_unsubscribe(connection, subscription_id);
-  g_object_unref(connection);
   g_main_loop_unref(loop);
+  g_object_unref(connection);
 
   return 0;
 }
