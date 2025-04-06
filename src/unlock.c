@@ -7,7 +7,6 @@
 
 #include "common.h"
 
-#define SHA512_BUFFER_SIZE EVP_MAX_MD_SIZE * 2 + 1
 #define MAX_PASSWORD_SIZE 4096    // maximum allowed size of decrypted password plus one for null
 #define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
 
@@ -113,14 +112,10 @@ guint32 get_dbus_service_process_id(const char *dbus_api, uid_t user_id, bool lo
   }
 }
 
-/// @brief Calculate the SHA-512 hash for the given file and return as a hexadecimal
-///        string in the given buffer.
+/// @brief Calculate the SHA-512 hash for the given file and return as a hexadecimal string.
 /// @param path path of the file for which SHA-512 hash has to be calculated
-/// @param hash_buffer fill the SHA-512 hash as a hexadecimal string with terminating null
-/// @param buffer_size total size of the passed `hash_buffer`
-/// @return length of the filled `hash_buffer` excluding terminating null, else 0 in case of failure
-///         or if the buffer is not large enough
-size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
+/// @return SHA-512 hash as a hexadecimal string which should be free'd with `g_free()` after use
+gchar *sha512sum(const char *path) {
   int fd = open(path, O_RDONLY);
   if (fd == -1) {
     perror("sha512sum() failed to open file");
@@ -148,13 +143,11 @@ size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
   if (bytes_read == -1) return 0;
 
   // convert bytes to hex string using sprintf which is not efficient but its a tiny fixed overhead
-  size_t buf_len = 0;
-  for (size_t i = 0; i < hash_len; i++, buf_len += 2) {
-    if (buf_len >= buffer_size - 2) return 0;
-    sprintf(hash_buffer + buf_len, "%02x", hash[i]);
+  gchar *hex_hash = g_malloc(hash_len * 2 + 1);
+  for (size_t i = 0; i < hash_len; i++) {
+    sprintf(hex_hash + (i * 2), "%02x", hash[i]);
   }
-  hash_buffer[buf_len] = '\0';
-  return buf_len;
+  return hex_hash;
 }
 
 /// @brief Send a notification to the desktop using the D-Bus `org.freedesktop.Notifications` API
@@ -196,11 +189,11 @@ bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar *displa
     // the `Display` property of the session is not set for the case of Wayland, and there is no way
     // to check if this is the same Wayland session (multiple Wayland sessions break stuff in many
     //   ways in any case) so just check that $WAYLAND_DISPLAY is not non-empty
-    g_autofree gchar *env_value = get_process_env_var(kp_pid, "WAYLAND_DISPLAY");
+    g_autofree const gchar *env_value = get_process_env_var(kp_pid, "WAYLAND_DISPLAY");
     return env_value && *env_value != '\0';
   } else {
     // for the case of X11, the value of $DISPLAY should match the passed `Display` session property
-    g_autofree gchar *env_value = get_process_env_var(kp_pid, "DISPLAY");
+    g_autofree const gchar *env_value = get_process_env_var(kp_pid, "DISPLAY");
     return g_strcmp0(env_value, display) == 0;
   }
 }
@@ -213,8 +206,7 @@ bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar *displa
 bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32 kp_pid) {
   // get the executable's SHA-512 hash from /proc/<pid>/exe and compare against the
   // recorded good checksum
-  char expected_sha512[SHA512_BUFFER_SIZE], current_sha512[SHA512_BUFFER_SIZE];
-  char kp_sha512_file[128], kp_exe[128];
+  char kp_sha512_file[128], expected_sha512[256], kp_exe[128];
   snprintf(kp_sha512_file, sizeof(kp_sha512_file), "%s/keepassxc.sha512", user_conf_dir);
   FILE *file = fopen(kp_sha512_file, "r");
   if (!file) {
@@ -223,26 +215,21 @@ bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32
     return false;
   }
   snprintf(kp_exe, sizeof(kp_exe), "/proc/%u/exe", kp_pid);
-  bool mismatch = sha512sum(kp_exe, current_sha512, SHA512_BUFFER_SIZE) == 0;
+  g_autofree const gchar *current_sha512 = sha512sum(kp_exe);
   // use `fgets` to read the sha512 file which is expected to have only one line
   // and replace terminating newline using `strcspn` (which works even if there was no newline)
-  mismatch = mismatch || !fgets(expected_sha512, sizeof(expected_sha512), file) ||
-             (expected_sha512[strcspn(expected_sha512, "\n")] = '\0',
-                 g_strcmp0(current_sha512, expected_sha512) != 0);
+  bool mismatch = !current_sha512 || !fgets(expected_sha512, sizeof(expected_sha512), file) ||
+                  (expected_sha512[strcspn(expected_sha512, "\n")] = '\0',
+                      g_strcmp0(current_sha512, expected_sha512) != 0);
   fclose(file);
   if (mismatch) {
     // `kp_exe_full` stores the actual executable that /proc/<pid>/exe points to, while
-    // `kp_exe_real` will either point to it or /proc/<pid>/exe in case `readlink` was unsuccessful
-    char kp_exe_full[PATH_MAX], *kp_exe_real = kp_exe;
-    ssize_t kp_full_len = readlink(kp_exe, kp_exe_full, sizeof(kp_exe_full) - 1);
-    if (kp_full_len > 0) {
-      kp_exe_full[kp_full_len] = '\0';
-      kp_exe_real = kp_exe_full;
-    }
+    // `kp_exe_real` will either point to it or /proc/<pid>/exe in case read link was unsuccessful
+    g_autofree const gchar *kp_exe_full = g_file_read_link(kp_exe, NULL);
+    const gchar *kp_exe_real = kp_exe_full ? kp_exe_full : kp_exe;
     g_critical("Aborting unlock due to checksum mismatch in keepassxc (PID %u EXE %s)", kp_pid,
         kp_exe_real);
-    char notify_body[PATH_MAX * 2];
-    snprintf(notify_body, sizeof(notify_body),
+    g_autofree const gchar *notify_body = g_strdup_printf(
         "If KeePassXC has been updated, then run \"sudo keepassxc-unlock-setup ...\" for one of "
         "the KDBX databases.\nOtherwise this could be an unknown process snooping on D-Bus.\n\n "
         "The offending process ID is %u having executable pointing to %s",
@@ -262,11 +249,12 @@ bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32
 /// @param session_data instance of `MonitoredSession` struct having information of the session
 ///                     being monitored
 /// @param wait_secs seconds to try connecting to the KeePassXC D-Bus service before giving up
+/// @param check_main_loop if set to `true` then check for `GMainLoop` to be running before unlock
 /// @return `true` if connection was successful and unlock was attempted (though one or more
 ///         databases may have failed to unlock due to other reasons), and `false` if connection to
 ///         KeePassXC failed or session was still locked
-bool unlock_databases(
-    GDBusConnection *system_conn, const MonitoredSession *session_data, int wait_secs) {
+bool unlock_databases(GDBusConnection *system_conn, const MonitoredSession *session_data,
+    int wait_secs, bool check_main_loop) {
   if (!session_data) g_error("unlock_databases() null session_data!");
 
   // loop till `wait_secs` to get the ID of the process providing KeePassXC's D-Bus API
@@ -316,9 +304,9 @@ bool unlock_databases(
         continue;
       }
 
-      char line[PATH_MAX];
-      char kdbx_file[PATH_MAX] = {0};
-      char key_file[PATH_MAX] = {0};
+      char line[PATH_MAX + 4];
+      char kdbx_file[PATH_MAX + 4] = {0};
+      char key_file[PATH_MAX + 4] = {0};
       int passwd_start_line = 0;
       while (fgets(line, sizeof(line), file)) {
         passwd_start_line++;
@@ -341,8 +329,8 @@ bool unlock_databases(
       }
 
       // check for session end before unlocking
-      if (!g_main_loop_is_running(session_data->loop)) {
-        print_info("unlock_databases() aborting unlock due to session end");
+      if (check_main_loop && !g_main_loop_is_running(session_data->loop)) {
+        print_info("unlock_databases() aborting unlock due to session end\n");
         break;
       }
 
@@ -407,14 +395,14 @@ void handle_session_event(GDBusConnection *conn, const char *sender_name, const 
       bool locked = g_variant_get_boolean(value);
       if (!locked && session_data->session_locked) {
         print_info("Unlocking database(s) after screen/session unlock event\n");
-        unlock_databases(conn, session_data, 5);
+        unlock_databases(conn, session_data, 5, true);
       }
       session_data->session_locked = locked;
     } else if (g_strcmp0(key, "Active") == 0) {
       bool active = g_variant_get_boolean(value);
       if (active && !session_data->session_active && !session_data->session_locked) {
         print_info("Unlocking database(s) after session activation event\n");
-        unlock_databases(conn, session_data, 5);
+        unlock_databases(conn, session_data, 5, true);
       }
       session_data->session_active = active;
     }
@@ -447,7 +435,7 @@ void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_na
     if (!system_conn) return;
     print_info(
         "KeePassXC started, unlocking registered database(s) for UID=%u\n", session_data->user_id);
-    unlock_databases(system_conn, session_data, 5);
+    unlock_databases(system_conn, session_data, 5, true);
     // unsubscribe to this signal here on (so if user closes and start KeePassXC again, then it
     // won't be auto-unlocked by design, though it will still have if session goes from
     // lock->unlock or inactive->active)
@@ -540,7 +528,7 @@ int main(int argc, char *argv[]) {
   g_autoptr(GDBusConnection) session_conn = NULL;
   // unlock on startup since this program should be invoked on user session start
   print_info("Startup: unlocking registered KeePassXC database(s) for UID=%u\n", user_id);
-  if (!unlock_databases(connection, &user_data, 15)) {
+  if (!unlock_databases(connection, &user_data, 15, false)) {
     // if unlock at startup failed, then subscribe to `NameOwnerChanged` signals to detect start
     // of KeePassXC (there is a small race here that KeePassXC start can happen between these
     // two which is fine since the worst case then is that auto-unlock didn't happen for a rare
