@@ -10,6 +10,8 @@
 
 #include <gio/gio.h>
 
+// TODO: define PRODUCT_VERSION from Makefile and also use the same in keepassxc-unlock-setup
+// get it from git last tag + commit ID (or no commit ID if it is exactly at the tag)
 #define PRODUCT_VERSION "0.9.3"
 
 #define KP_CONFIG_DIR "/etc/keepassxc-unlock"
@@ -36,7 +38,7 @@
 /// @param system_bus if `true` then connect to the system bus else to the user's session bus
 /// @param log_error if `true` then log connection error to `stderr`
 /// @return an instance of `GDBusConnection*` that may be shared among callers and must be released
-///         using `g_object_unref()`, or NULL if the connection was unsuccessful
+///         using `g_object_unref()`/`g_autoptr()`, or NULL if the connection was unsuccessful
 extern GDBusConnection *dbus_connect(bool system_bus, bool log_error);
 
 /// @brief Check whether a user has configured KDBX database(s) for auto-unlock.

@@ -5,7 +5,7 @@
 
 
 GDBusConnection *dbus_connect(bool system_bus, bool log_error) {
-  GError *error = NULL;
+  g_autoptr(GError) error = NULL;
   GDBusConnection *connection =
       g_bus_get_sync(system_bus ? G_BUS_TYPE_SYSTEM : G_BUS_TYPE_SESSION, NULL, &error);
   if (!connection) {
@@ -13,7 +13,6 @@ GDBusConnection *dbus_connect(bool system_bus, bool log_error) {
       print_error("Failed to connect to %s bus: %s\n", system_bus ? "system" : "session",
           error ? error->message : "(null)");
     }
-    g_clear_error(&error);
   }
   return connection;
 }
@@ -33,21 +32,20 @@ bool user_has_db_configs(guint32 user_id) {
 
 bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_path,
     guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr) {
-  GError *error = NULL;
+  g_autoptr(GError) error = NULL;
   // get all properties of the session
-  GVariant *session_props = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME, session_path,
-      DBUS_MAIN_OBJECT_NAME ".Properties", "GetAll",
+  g_autoptr(GVariant) session_props = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME,
+      session_path, DBUS_MAIN_OBJECT_NAME ".Properties", "GetAll",
       g_variant_new("(s)", "org.freedesktop.login1.Session"), NULL, G_DBUS_CALL_FLAGS_NONE,
       DBUS_CALL_WAIT, NULL, &error);
   if (!session_props) {
     print_error(
         "Failed to get properties for '%s': %s\n", session_path, error ? error->message : "(null)");
-    g_clear_error(&error);
     return false;
   }
 
   // parse the properties to check if the session is valid
-  GVariantIter *iter = NULL;
+  g_autoptr(GVariantIter) iter = NULL;
   g_variant_get(session_props, "(a{sv})", &iter);
 
   bool user_match = false, has_supported_type = false, is_remote = false, is_active = false;
@@ -78,14 +76,15 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
       is_active = g_variant_get_boolean(value);
     }
   }
-  g_variant_iter_free(iter);
-  g_variant_unref(session_props);
 
   // a session is a target for auto-unlock if it is of a supported type, not remote, and active
   if (user_match && has_supported_type && !is_remote && is_active) {
     return true;
   } else {
-    if (display_ptr && *display_ptr) g_free(*display_ptr);
+    if (display_ptr && *display_ptr) {
+      g_free(*display_ptr);
+      *display_ptr = NULL;
+    }
     return false;
   }
 }
@@ -96,12 +95,11 @@ gchar *get_process_env_var(guint32 pid, const char *env_var) {
 
   // since the size of initial process environment is limited to ARG_MAX, its safe to read the
   // entire file in one go
-  gchar *env = NULL;
+  g_autofree gchar *env = NULL;
   gsize env_len = 0;
-  GError *error = NULL;
+  g_autoptr(GError) error = NULL;
   if (!g_file_get_contents(env_file, &env, &env_len, &error)) {
     print_error("Failed to read file '%s': %s\n", env_file, error ? error->message : "(null)");
-    g_clear_error(&error);
     return NULL;
   }
   // strings are null separated in /proc/<pid>/environ, so use strlen to skip over
@@ -116,6 +114,5 @@ gchar *get_process_env_var(guint32 pid, const char *env_var) {
     }
     env_ptr += current_len + 1;
   }
-  g_free(env);
   return var_value;
 }

@@ -16,7 +16,7 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
     gpointer user_data) {
   gchar *session_path = NULL;
   // extract session path from the parameters
-  g_variant_get(parameters, "(s&o)", NULL, &session_path);
+  g_variant_get(parameters, "(s&o)", NULL, &session_path);    // `&o` avoids `g_free()`
 
   // check if the session can be a target for auto-unlock and also get the owner
   print_info(
@@ -52,10 +52,11 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
   fclose(session_env_fp);
 
   // start the systemd service for the user which gets instantiated from the template service
-  char service_cmd[1024];
+  char service_cmd[128];
   // deliberately have only one auto-unlock service for one user and not separate one for each
   // session to avoid those interfering with one another (KeePassXC instance to session correlation
   //   might be incorrect for multiple Wayland sessions)
+  // TODO: use org.freedesktop.systemd1.Manager.StartUnit("...", "replace") API
   snprintf(
       service_cmd, sizeof(service_cmd), "systemctl start keepassxc-unlock@%u.service", user_id);
   print_info("Executing: %s\n", service_cmd);
@@ -71,6 +72,7 @@ int main(int argc, char *argv[]) {
     print_error("This program must be run as root\n");
     return 1;
   }
+  // TODO: add --version argument to this
   if (argc != 1) {
     print_error("No arguments are expected\n");
     return 1;
@@ -79,7 +81,7 @@ int main(int argc, char *argv[]) {
   print_info("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
-  GDBusConnection *connection = dbus_connect(true, true);
+  g_autoptr(GDBusConnection) connection = dbus_connect(true, true);
   if (!connection) return 1;
 
   // subscribe to `SessionNew` signal on org.freedesktop.login1
@@ -91,18 +93,13 @@ int main(int argc, char *argv[]) {
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_new_session, NULL, NULL);
   if (subscription_id == 0) {
     print_error("Failed to subscribe to receive D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
-    g_object_unref(connection);
     return 1;
   }
 
   // run the main loop
-  GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+  g_autoptr(GMainLoop) loop = g_main_loop_new(NULL, FALSE);
   g_main_loop_run(loop);
 
-  // cleanup
   g_dbus_connection_signal_unsubscribe(connection, subscription_id);
-  g_main_loop_unref(loop);
-  g_object_unref(connection);
-
   return 0;
 }
