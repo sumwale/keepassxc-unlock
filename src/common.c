@@ -1,8 +1,8 @@
 #include <glob.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include "common.h"
+
 
 GDBusConnection *dbus_connect(bool system_bus, bool log_error) {
   GError *error = NULL;

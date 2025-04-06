@@ -4,7 +4,6 @@
 #include <openssl/evp.h>
 #include <pwd.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include "common.h"
 
@@ -81,14 +80,29 @@ void change_euid(uid_t uid) {
   }
 }
 
+/// @brief Connect to the user's session D-Bus while switching effective user ID. Optionally display
+///        error on `stderr` if there was a connection failure.
+/// @param user_id the numeric ID of the user to switch the effective user ID for session connect to
+///                be successful; the effective user ID will be switched back to root at the end
+/// @param log_error if `true` then log connection error to `stderr`
+/// @return an instance of `GDBusConnection*` that may be shared among callers and must be released
+///         using `g_object_unref()`/`g_autoptr()`, or NULL if the connection was unsuccessful
+GDBusConnection *dbus_session_connect(uid_t user_id, bool log_error) {
+  change_euid(user_id);
+  GDBusConnection *session_conn = dbus_connect(false, log_error);
+  change_euid(0);
+  return session_conn;
+}
+
 /// @brief Get the process ID registered for given D-Bus API on the session bus.
 ///        Since this uses the session bus, the call should be done after changing
 ///        the effective UID of this process to the target user.
 /// @param dbus_api the D-Bus API that the process has registered
+/// @param user_id numeric ID of the user
 /// @param log_error if `true` then log D-Bus connection error to `stderr`
 /// @return the process ID registered for the D-Bus API or 0 if something went wrong
-guint32 get_dbus_service_process_id(const char *dbus_api, bool log_error) {
-  GDBusConnection *session_conn = dbus_connect(false, log_error);
+guint32 get_dbus_service_process_id(const char *dbus_api, uid_t user_id, bool log_error) {
+  GDBusConnection *session_conn = dbus_session_connect(user_id, log_error);
   if (!session_conn) return 0;
 
   GError *error = NULL;
@@ -151,9 +165,19 @@ size_t sha512sum(const char *path, char *hash_buffer, size_t buffer_size) {
   return buf_len;
 }
 
-bool send_session_notification(const gchar *name, const gchar *icon, const gchar *summary,
-    const gchar *body, guint8 urgency, gint32 timeout) {
-  GDBusConnection *session_conn = dbus_connect(false, true);
+/// @brief Send a notification to the desktop using the D-Bus `org.freedesktop.Notifications` API
+///        (like that done by `libnotify`/`notify-send`).
+/// @param user_id numeric ID of the user
+/// @param name application name for the notification
+/// @param icon icon filename or stock icon to display
+/// @param summary summary of the notification message
+/// @param body body of the notification message
+/// @param urgency the urgency level of the notification (0 - low, 1 - normal, 2 - critical)
+/// @param timeout duration, in milliseconds, for the notification to appear on screen
+/// @return `true` if the notification was relayed successfully, `false` otherwise
+bool send_session_notification(uid_t user_id, const gchar *name, const gchar *icon,
+    const gchar *summary, const gchar *body, guint8 urgency, gint32 timeout) {
+  GDBusConnection *session_conn = dbus_session_connect(user_id, true);
   if (!session_conn) return 0;
 
   GVariantBuilder hints;
@@ -238,14 +262,13 @@ bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32
     char notify_body[PATH_MAX * 2];
     snprintf(notify_body, sizeof(notify_body),
         "If KeePassXC has been updated, then run \"sudo keepassxc-unlock-setup ...\" for one of "
-        "the KDBX databases.\nOtherwise this could be an unknown process snooping on D-Bus.\nThe "
-        "offending process ID is %u having executable pointing to %s",
+        "the KDBX databases.\nOtherwise this could be an unknown process snooping on D-Bus.\n\n "
+        "The offending process ID is %u having executable pointing to %s",
         kp_pid, kp_exe_real);
-    change_euid(user_id);
-    bool notified = send_session_notification("keepassxc-unlock", "system-lock-screen",
-        "Checksum mismatch in keepassxc", notify_body, 2, 0);
-    change_euid(0);
-    if (!notified) g_critical("Failed to send D-Bus notification to the user for SHA-512 mismatch");
+    if (!send_session_notification(user_id, "keepassxc-unlock", "system-lock-screen",
+            "Checksum mismatch in keepassxc", notify_body, 2, 120000)) {
+      g_critical("Failed to send D-Bus notification to the user for SHA-512 mismatch");
+    }
     return false;
   }
   return true;
@@ -268,10 +291,9 @@ bool unlock_databases(
   guint32 kp_pid = 0;
   for (int i = 0; i < wait_secs; i++) {
     // switch effective ID to the user before connecting since this is the user's session bus
-    change_euid(session_data->user_id);
     // log connection error only in the last iteration
-    kp_pid = get_dbus_service_process_id(KP_DBUS_INTERFACE, i == wait_secs - 1);
-    change_euid(0);
+    kp_pid =
+        get_dbus_service_process_id(KP_DBUS_INTERFACE, session_data->user_id, i == wait_secs - 1);
     if (kp_pid != 0) break;
     sleep(1);
   }
@@ -364,12 +386,9 @@ bool unlock_databases(
       }
       decrypted_passwd[bytes_read] = '\0';
 
-      change_euid(session_data->user_id);
-      GDBusConnection *session_conn = dbus_connect(false, true);
-      if (!session_conn) {
-        change_euid(0);
-        continue;
-      }
+      GDBusConnection *session_conn = dbus_session_connect(session_data->user_id, true);
+      if (!session_conn) continue;
+
       GError *error = NULL;
       GVariant *result = g_dbus_connection_call_sync(session_conn, KP_DBUS_INTERFACE, "/keepassxc",
           KP_DBUS_INTERFACE, "openDatabase",
@@ -383,7 +402,6 @@ bool unlock_databases(
         g_clear_error(&error);
       }
       g_object_unref(session_conn);
-      change_euid(0);
     }
   }
   globfree(&globbuf);
@@ -543,9 +561,7 @@ int main(int argc, char *argv[]) {
         // of KeePassXC (there is a small race here that KeePassXC start can happen between these
         // two which is fine since the worst case then is that auto-unlock didn't happen for a rare
         // case if KeePassXC wasn't started on session start)
-        change_euid(user_id);
-        session_conn = dbus_connect(false, true);
-        change_euid(0);
+        session_conn = dbus_session_connect(user_id, true);
         if (session_conn) {
           guint kp_subscription_id =
               g_dbus_connection_signal_subscribe(session_conn, DBUS_MAIN_OBJECT_NAME,
