@@ -7,19 +7,27 @@ set -o pipefail
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin"
 
 SCRIPT="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PRODUCT_VERSION="@@PRODUCT_VERSION@@"
 
 function usage() {
   echo
-  echo "Usage: $SCRIPT <USER> <KDBX>"
+  echo "Usage: $SCRIPT [--version] <USER> <KDBX>"
   echo
   echo "Setup keepassxc-unlock password and key for a specified user's KDBX database"
   echo
   echo "Arguments:"
+  echo "  --version       show the version string and exit"
   echo "  <USER>          name of the user who owns the database"
   echo "  <KDBX>          path to the KDBX database (can be relative or absolute)"
   echo
 }
 
+if [ "$#" -eq 1 -a "$1" = "--version" ]; then
+  echo "$PRODUCT_VERSION"
+  exit 0
+fi
 if [ "$#" -ne 2 ]; then
   usage
   exit 1
@@ -32,6 +40,9 @@ fi
 
 user_id=$(id -u "$1")
 [ -z "$user_id" ] && exit 2
+
+echo "Running $SCRIPT version $PRODUCT_VERSION"
+echo
 
 kdbx_file=$(realpath "$2")
 if [ ! -f "$kdbx_file" ]; then

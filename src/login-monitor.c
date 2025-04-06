@@ -65,13 +65,16 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
 
 
 int main(int argc, char *argv[]) {
+  if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+    g_print("%s\n", PRODUCT_VERSION);
+    return 0;
+  }
   if (geteuid() != 0) {
     g_printerr("This program must be run as root\n");
     return 1;
   }
-  // TODO: add --version argument to this
   if (argc != 1) {
-    g_printerr("No arguments are expected\n");
+    g_printerr("No arguments are expected apart from --version\n");
     return 1;
   }
 

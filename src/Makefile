@@ -2,8 +2,10 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wstack-protector -O2 -fstack-protector-all -fstack-protector-strong
+DEFINES = -DPRODUCT_VERSION=\"$(PRODUCT_VERSION)\"
 INCLUDES := $(shell pkg-config --cflags glib-2.0 gio-2.0 libcrypto)
 LDFLAGS = -lgio-2.0 -lgmodule-2.0 -lgobject-2.0 -lglib-2.0 -lcrypto
+
 INSTALL_BIN_DIR = /usr/local/sbin
 
 TARGETS = keepassxc-login-monitor keepassxc-unlock
@@ -17,10 +19,10 @@ all: $(TARGETS)
 all-static: $(TARGETS_STATIC)
 
 $(TARGETS): keepassxc-%: %.c common.c common.h
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 $(TARGETS_STATIC): keepassxc-%-$(ARCH)-static: %.c common.c common.h
-	$(CC) -static $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS) $(STATIC_LIBS)
+	$(CC) -static $(CFLAGS) $(DEFINES) $(INCLUDES) -o $@ $^ $(LDFLAGS) $(STATIC_LIBS)
 
 all-static-musl:
 	if type docker >/dev/null 2>/dev/null; then \

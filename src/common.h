@@ -10,9 +10,10 @@
 
 #include <gio/gio.h>
 
-// TODO: define PRODUCT_VERSION from Makefile and also use the same in keepassxc-unlock-setup
-// get it from git last tag + commit ID (or no commit ID if it is exactly at the tag)
-#define PRODUCT_VERSION "0.9.3"
+// PRODUCT_VERSION should be defined by build scripts
+#ifndef PRODUCT_VERSION
+  #define PRODUCT_VERSION ""
+#endif
 
 #define KP_CONFIG_DIR "/etc/keepassxc-unlock"
 

@@ -8,7 +8,7 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-sbin_files="keepassxc-unlock-setup"
+shell_scripts="keepassxc-unlock-setup.in version.sh"
 musl_suffix="-$(uname -m)-static"
 musl_files="keepassxc-login-monitor$musl_suffix keepassxc-unlock$musl_suffix"
 src_files="src/login-monitor.c src/unlock.c src/common.c src/common.h src/Makefile"
@@ -50,15 +50,22 @@ trap "/bin/rm -rf $tmp_dir" 0 1 2 3 4 5 6 11 12 15
 
 echo -e "${fg_orange}Fetching executables and installing in /usr/local/sbin$fg_reset"
 sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || /bin/true
-for file in $sbin_files; do
+for file in $shell_scripts; do
   $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
+done
+product_version=$(bash $tmp_dir/version.sh --remote)
+rm -f $tmp_dir/version.sh
+for file in $tmp_dir/*.in; do
+  sed "s/@@PRODUCT_VERSION@@/$product_version/g" $file > ${file%.in}
+  chmod 0755 ${file%.in}
+  rm -f $file
 done
 if [ "$1" = "--build" ]; then
   echo -e "${fg_cyan}Building from source...$fg_reset"
   for file in $src_files; do
     $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
   done
-  make -C $tmp_dir
+  make -C $tmp_dir "PRODUCT_VERSION=$product_version"
   for file in $src_files; do
     rm -f $tmp_dir/$(basename $file)
   done
