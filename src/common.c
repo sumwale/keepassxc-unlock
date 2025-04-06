@@ -36,7 +36,7 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   GError *error = NULL;
   // get all properties of the session
   GVariant *session_props = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME, session_path,
-      "org.freedesktop.DBus.Properties", "GetAll",
+      DBUS_MAIN_OBJECT_NAME ".Properties", "GetAll",
       g_variant_new("(s)", "org.freedesktop.login1.Session"), NULL, G_DBUS_CALL_FLAGS_NONE,
       DBUS_CALL_WAIT, NULL, &error);
   if (!session_props) {

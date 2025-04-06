@@ -6,6 +6,7 @@
         "stdlib.h": "c",
         "types.h": "c",
         "common.h": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "stdio.h": "c"
     }
 }

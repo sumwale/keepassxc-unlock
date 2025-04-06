@@ -13,6 +13,7 @@
 
 #define KP_CONFIG_DIR "/etc/keepassxc-unlock"
 
+#define DBUS_MAIN_OBJECT_NAME "org.freedesktop.DBus"
 #define LOGIN_OBJECT_NAME "org.freedesktop.login1"
 #define LOGIN_OBJECT_PATH "/org/freedesktop/login1"
 #define LOGIN_MANAGER_INTERFACE "org.freedesktop.login1.Manager"

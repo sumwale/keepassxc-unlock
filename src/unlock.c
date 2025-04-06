@@ -12,6 +12,22 @@
 #define MAX_PASSWORD_SIZE 4096    // maximum allowed size of decrypted password plus one for null
 #define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
 
+
+/// @brief Holds information of the session being monitored and passed to the `user_data` parameter
+///        of the `handle_session_event` and `handle_session_close` callbacks. Also passed to the
+///        main `unlock_databases` method.
+typedef struct {
+  GMainLoop *loop;              // the main loop object pointer
+  const gchar *session_path;    // path of the selected session
+  uid_t user_id;                // numeric ID of the user
+  bool is_wayland;              // `true` if the session is a Wayland one, `false` for X11
+  const gchar *display;         // the `Display` property of the session
+  bool session_locked;          // holds the previous locked state of the session
+  bool session_active;          // holds the previous active state of the session
+  guint kp_subscription_id;     // the subscription ID of KeePassXC `NameOwnerChanged` signals
+} MonitoredSession;
+
+
 /// @brief Show usage of this program
 /// @param script_name name of the invoking script as obtained from `argv[0]`
 void show_usage(const char *script_name) {
@@ -31,7 +47,7 @@ void show_usage(const char *script_name) {
 bool is_locked(GDBusConnection *connection, const char *session_path) {
   GError *error = NULL;
   GVariant *result = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME, session_path,
-      "org.freedesktop.DBus.Properties", "Get",
+      DBUS_MAIN_OBJECT_NAME ".Properties", "Get",
       g_variant_new("(ss)", "org.freedesktop.login1.Session", "LockedHint"), NULL,
       G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
   if (!result) {
@@ -77,7 +93,7 @@ guint32 get_dbus_service_process_id(const char *dbus_api, bool log_error) {
 
   GError *error = NULL;
   GVariant *result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.DBus", "/",
-      "org.freedesktop.DBus", "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api), NULL,
+      DBUS_MAIN_OBJECT_NAME, "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api), NULL,
       G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
   g_object_unref(session_conn);
   if (result) {
@@ -237,25 +253,22 @@ bool verify_process_exe_sha512(const char *user_conf_dir, uid_t user_id, guint32
 
 /// @brief Unlock all the KDBX databases that were registered (using `keepassxc-unlock-setup`)
 ///        of the given user using KeePassXC's D-Bus API.
-/// @param user_id numeric ID of the user
 /// @param system_conn the `GBusConnection` object for the system D-Bus
-/// @param session_path path of the selected session
-/// @param is_wayland `true` if the session is a Wayland one, else `false` if it is X11
-/// @param display the $DISPLAY variable for the session as retrieved from its `Display` property
+/// @param session_data instance of `MonitoredSession` struct having information of the session
+///                     being monitored
 /// @param wait_secs seconds to try connecting to the KeePassXC D-Bus service before giving up
-void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *session_path,
-    bool is_wayland, const gchar *display, int wait_secs) {
-  // last minute check to skip unlock if LockedHint is true
-  if (is_locked(system_conn, session_path)) {
-    print_error("Skipping unlock since screen/session is still locked!\n");
-    return;
-  }
+/// @return `true` if connection was successful and unlock was attempted (though one or more
+///         databases may have failed to unlock due to other reasons), and `false` if connection to
+///         KeePassXC failed or session was still locked
+bool unlock_databases(
+    GDBusConnection *system_conn, const MonitoredSession *session_data, int wait_secs) {
+  if (!session_data) g_error("unlock_databases() null session_data!");
 
   // loop till `wait_secs` to get the ID of the process providing KeePassXC's D-Bus API
   guint32 kp_pid = 0;
   for (int i = 0; i < wait_secs; i++) {
     // switch effective ID to the user before connecting since this is the user's session bus
-    change_euid(user_id);
+    change_euid(session_data->user_id);
     // log connection error only in the last iteration
     kp_pid = get_dbus_service_process_id(KP_DBUS_INTERFACE, i == wait_secs - 1);
     change_euid(0);
@@ -264,21 +277,27 @@ void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *s
   }
   if (kp_pid == 0) {
     print_error("Failed to connect to KeePassXC D-Bus API within %d secs\n", wait_secs);
-    return;
+    return false;
   }
 
   // verify from the KeePassXC executable's environment that it is running in the selected session
-  if (!verify_process_session(kp_pid, is_wayland, display)) {
+  if (!verify_process_session(kp_pid, session_data->is_wayland, session_data->display)) {
     print_error("Skipping unlock due to mismatch of $DISPLAY/$WAYLAND_DISPLAY of KeePassXC process "
                 "with ID %u against the session properties\n",
         kp_pid);
-    return;
+    return false;
   }
 
   // verify the KeePassXC executable's checksum
   char user_conf_dir[100];
-  snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%u", KP_CONFIG_DIR, user_id);
-  if (!verify_process_exe_sha512(user_conf_dir, user_id, kp_pid)) return;
+  snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%u", KP_CONFIG_DIR, session_data->user_id);
+  if (!verify_process_exe_sha512(user_conf_dir, session_data->user_id, kp_pid)) return false;
+
+  // last minute check to skip unlock if LockedHint is true
+  if (is_locked(system_conn, session_data->session_path)) {
+    print_error("Skipping unlock since screen/session is still locked!\n");
+    return false;
+  }
 
   char conf_pattern[128], decrypted_passwd[MAX_PASSWORD_SIZE];
   snprintf(conf_pattern, sizeof(conf_pattern), "%s/*.conf", user_conf_dir);
@@ -317,6 +336,12 @@ void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *s
         continue;
       }
 
+      // check for session end before unlocking
+      if (!g_main_loop_is_running(session_data->loop)) {
+        print_info("unlock_databases() aborting unlock due to session end");
+        break;
+      }
+
       char conf_name[128] = {0}, decrypt_cmd[256];
       char *conf_name_p, *conf_filename = strrchr(conf_path, '/');
       if (conf_filename && (conf_name_p = strstr(conf_filename + 1, ".conf")) != NULL) {
@@ -339,7 +364,7 @@ void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *s
       }
       decrypted_passwd[bytes_read] = '\0';
 
-      change_euid(user_id);
+      change_euid(session_data->user_id);
       GDBusConnection *session_conn = dbus_connect(false, true);
       if (!session_conn) {
         change_euid(0);
@@ -362,31 +387,21 @@ void unlock_databases(uid_t user_id, GDBusConnection *system_conn, const char *s
     }
   }
   globfree(&globbuf);
+  return true;
 }
 
-/// @brief Holds the fields for `user_data` passed to the `handle_session_event` callback
-typedef struct {
-  GMainLoop *loop;              // the main loop object pointer
-  const gchar *session_path;    // path of the selected session
-  uid_t user_id;                // numeric ID of the user
-  bool is_wayland;              // `true` if the session is a Wayland one, `false` for X11
-  const gchar *display;         // the `Display` property of the session
-  bool session_locked;          // holds the previous locked state of the session
-  bool session_active;          // holds the previous active state of the session
-} session_loop_data;
-
-/// @brief Callback to handle session events on `org.freedesktop.login1` for selected session
+/// @brief Callback to handle session signals on `org.freedesktop.login1` for selected session
 /// @param conn the `GBusConnection` object for the system D-Bus
-/// @param sender_name name of the sender of the event
-/// @param object_path path of the object for which the event was raised
+/// @param sender_name name of the sender of the signal
+/// @param object_path path of the object for which the signal was raised
 /// @param interface_name D-Bus interface of the raised signal
 /// @param signal_name name of the D-Bus signal that was raised
 /// @param parameters parameters of the raised signal
-/// @param user_data custom user data sent through with the event which should be pointer to
-///                  `session_loop_data`
+/// @param user_data custom user data sent through with the signal which should be pointer to
+///                  `MonitoredSession`
 void handle_session_event(GDBusConnection *conn, const char *sender_name, const char *object_path,
     const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data) {
-  session_loop_data *session_data = (session_loop_data *)user_data;
+  MonitoredSession *session_data = (MonitoredSession *)user_data;
   GVariantIter *iter = NULL;
   const char *key;
   GVariant *value = NULL;
@@ -396,16 +411,14 @@ void handle_session_event(GDBusConnection *conn, const char *sender_name, const 
       bool locked = g_variant_get_boolean(value);
       if (!locked && session_data->session_locked) {
         print_info("Unlocking database(s) after screen/session unlock event\n");
-        unlock_databases(session_data->user_id, conn, session_data->session_path,
-            session_data->is_wayland, session_data->display, 10);
+        unlock_databases(conn, session_data, 5);
       }
       session_data->session_locked = locked;
     } else if (g_strcmp0(key, "Active") == 0) {
       bool active = g_variant_get_boolean(value);
       if (active && !session_data->session_active && !session_data->session_locked) {
         print_info("Unlocking database(s) after session activation event\n");
-        unlock_databases(session_data->user_id, conn, session_data->session_path,
-            session_data->is_wayland, session_data->display, 30);
+        unlock_databases(conn, session_data, 5);
       }
       session_data->session_active = active;
     }
@@ -416,12 +429,37 @@ void handle_session_event(GDBusConnection *conn, const char *sender_name, const 
 /// @brief Callback to handle session close for the selected session
 void handle_session_close(GDBusConnection *conn, const char *sender_name, const char *object_path,
     const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data) {
-  session_loop_data *session_data = (session_loop_data *)user_data;
+  MonitoredSession *session_data = (MonitoredSession *)user_data;
   gchar *removed_session_path = NULL;
-  g_variant_get(parameters, "(s&o)", NULL, &removed_session_path);    // &o avoids `g_free()`
+  g_variant_get(parameters, "(s&o)", NULL, &removed_session_path);    // `&o` avoids `g_free()`
   if (g_strcmp0(removed_session_path, session_data->session_path) == 0) {
     print_info("Exit on session end for %s\n", session_data->session_path);
     g_main_loop_quit(session_data->loop);
+  }
+}
+
+/// @brief Callback to handle KeePassXC startup when it was not present at the start of this process
+void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_name,
+    const char *object_path, const char *interface_name, const char *signal_name,
+    GVariant *parameters, gpointer user_data) {
+  MonitoredSession *session_data = (MonitoredSession *)user_data;
+  // check the name of added interface and that owner has changed from empty to non-empty
+  gchar *name = NULL, *old_owner = NULL, *new_owner = NULL;
+  g_variant_get(parameters, "(&s&s&s)", &name, &old_owner, &new_owner);    // `&s`s avoid `g_free()`
+  if (g_strcmp0(name, KP_DBUS_INTERFACE) == 0 && (!old_owner || *old_owner == '\0') && new_owner &&
+      *new_owner != '\0') {
+    GDBusConnection *system_conn = dbus_connect(true, true);
+    if (system_conn) {
+      unlock_databases(system_conn, session_data, 5);
+      g_object_unref(system_conn);
+      // unsubscribe to this signal here on (so if user closes and start KeePassXC again, then it
+      // won't be auto-unlocked by design, though it will still have if session goes from
+      // lock->unlock or inactive->active)
+      guint kp_subscription_id = g_atomic_int_exchange(&session_data->kp_subscription_id, 0);
+      if (kp_subscription_id != 0) {
+        g_dbus_connection_signal_unsubscribe(session_conn, kp_subscription_id);
+      }
+    }
   }
 }
 
@@ -477,31 +515,54 @@ int main(int argc, char *argv[]) {
   snprintf(dbus_address, sizeof(dbus_address), "unix:path=/run/user/%u/bus", user_id);
   setenv("DBUS_SESSION_BUS_ADDRESS", dbus_address, 1);
 
-  // unlock on startup since this program should be invoked on user session start
-  print_info("Startup: unlocking registered KeePassXC database(s) for UID=%u\n", user_id);
-  unlock_databases(user_id, connection, session_path, is_wayland, display, 60);
-
   // start monitoring the session
   int exit_code = 0;
   print_info("Monitoring session %s for UID=%u\n", session_path, user_id);
   GMainLoop *loop = g_main_loop_new(NULL, FALSE);
-  // subscription is on the root org.freedesktop.login1 since the SessionRemoved signal has
-  // also to be monitored which is only received on the root login object
-  session_loop_data user_data = {loop, session_path, user_id, is_wayland, display, false, true};
+  // subscribe to `PropertiesChanged` for the screen/session lock/unlock (`LockedHint`)
+  // and session active/inactive events
+  MonitoredSession user_data = {loop, session_path, user_id, is_wayland, display, false, true, 0};
   guint session_subscription_id = g_dbus_connection_signal_subscribe(connection,
-      LOGIN_OBJECT_NAME,                    // sender
-      "org.freedesktop.DBus.Properties",    // interface
-      "PropertiesChanged",                  // signal name
-      session_path,                         // object path
+      LOGIN_OBJECT_NAME,                      // sender
+      DBUS_MAIN_OBJECT_NAME ".Properties",    // interface
+      "PropertiesChanged",                    // signal name
+      session_path,                           // object path
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_session_event, &user_data, NULL);
   if (session_subscription_id != 0) {
+    // subscribe to `SessionRemoved` signals separately which is on the main login object
+    // while the session object itself does not receive any notification for its removal
     guint login_subscription_id = g_dbus_connection_signal_subscribe(connection, LOGIN_OBJECT_NAME,
         LOGIN_MANAGER_INTERFACE, "SessionRemoved", LOGIN_OBJECT_PATH, NULL,
         G_DBUS_SIGNAL_FLAGS_NONE, handle_session_close, &user_data, NULL);
     if (login_subscription_id != 0) {
+      GDBusConnection *session_conn = NULL;
+      // unlock on startup since this program should be invoked on user session start
+      print_info("Startup: unlocking registered KeePassXC database(s) for UID=%u\n", user_id);
+      if (!unlock_databases(connection, &user_data, 15)) {
+        // if unlock at startup failed, then subscribe to `NameOwnerChanged` signals to detect start
+        // of KeePassXC (there is a small race here that KeePassXC start can happen between these
+        // two which is fine since the worst case then is that auto-unlock didn't happen for a rare
+        // case if KeePassXC wasn't started on session start)
+        change_euid(user_id);
+        session_conn = dbus_connect(false, true);
+        change_euid(0);
+        if (session_conn) {
+          guint kp_subscription_id =
+              g_dbus_connection_signal_subscribe(session_conn, DBUS_MAIN_OBJECT_NAME,
+                  DBUS_MAIN_OBJECT_NAME, "NameOwnerChanged", "/org/freedesktop/DBus", NULL,
+                  G_DBUS_SIGNAL_FLAGS_NONE, handle_keepassxc_start, &user_data, NULL);
+          g_atomic_int_set(&user_data.kp_subscription_id, kp_subscription_id);
+        }
+      }
+
       // run the main loop
       g_main_loop_run(loop);
 
+      guint kp_subscription_id = g_atomic_int_exchange(&user_data.kp_subscription_id, 0);
+      if (kp_subscription_id != 0) {
+        g_dbus_connection_signal_unsubscribe(session_conn, kp_subscription_id);
+      }
+      g_object_unref(session_conn);
       g_dbus_connection_signal_unsubscribe(connection, login_subscription_id);
     } else {
       print_error("Failed to subscribe to receive D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
