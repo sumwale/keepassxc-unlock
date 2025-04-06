@@ -22,17 +22,6 @@
 #define LOGIN_MANAGER_INTERFACE "org.freedesktop.login1.Manager"
 #define DBUS_CALL_WAIT 60000    // in milliseconds
 
-#define print_info(...)                                                                            \
-  {                                                                                                \
-    printf(__VA_ARGS__);                                                                           \
-    fflush(stdout);                                                                                \
-  }
-#define print_error(...)                                                                           \
-  {                                                                                                \
-    fprintf(stderr, __VA_ARGS__);                                                                  \
-    fflush(stderr);                                                                                \
-  }
-
 /// @brief Connect to the global system or user's session D-Bus. Optionally display error on
 ///        `stderr` if there was a connection failure.
 /// @param system_bus if `true` then connect to the system bus else to the user's session bus

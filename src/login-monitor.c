@@ -19,18 +19,17 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
   g_variant_get(parameters, "(s&o)", NULL, &session_path);    // `&o` avoids `g_free()`
 
   // check if the session can be a target for auto-unlock and also get the owner
-  print_info(
-      "Checking if session '%s' can be auto-unlocked and looking up its owner\n", session_path);
+  g_message("Checking if session '%s' can be auto-unlocked and looking up its owner", session_path);
   guint32 user_id = 0;
   if (!session_valid_for_unlock(conn, session_path, 0, &user_id, NULL, NULL)) {
-    print_info("Ignoring session which is not a valid target for auto-unlock\n");
+    g_message("Ignoring session which is not a valid target for auto-unlock");
     return;
   }
 
   // check if the user has any databases configured for auto-unlock
   if (!user_has_db_configs(user_id)) {
-    print_error(
-        "Ignoring session as no KDBX databases have been configured for auto-unlock by UID=%u\n",
+    g_warning(
+        "Ignoring session as no KDBX databases have been configured for auto-unlock by UID=%u",
         user_id);
     return;
   }
@@ -40,9 +39,8 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
   snprintf(session_env, sizeof(session_env), "%s/%u/session.env", KP_CONFIG_DIR, user_id);
   FILE *session_env_fp = fopen(session_env, "w");
   if (!session_env_fp) {
-    print_error(
-        "\033[1;33mhandle_new_session() failed to open '%s' for writing: \033[00m", session_env);
-    perror(NULL);
+    g_critical(
+        "handle_new_session() failed to open '%s' for writing: %s", session_env, g_strerror(errno));
     return;
   }
   // this can write different session paths for the same user but it doesn't matter since subsequent
@@ -59,26 +57,25 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
   // TODO: use org.freedesktop.systemd1.Manager.StartUnit("...", "replace") API
   snprintf(
       service_cmd, sizeof(service_cmd), "systemctl start keepassxc-unlock@%u.service", user_id);
-  print_info("Executing: %s\n", service_cmd);
+  g_message("Executing: %s", service_cmd);
   if (system(service_cmd) != 0) {
-    print_error("\033[1;33mhandle_new_session() failed to start '%s': \033[00m", service_cmd);
-    perror(NULL);
+    g_critical("handle_new_session() failed to start '%s': %s", service_cmd, g_strerror(errno));
   }
 }
 
 
 int main(int argc, char *argv[]) {
   if (geteuid() != 0) {
-    print_error("This program must be run as root\n");
+    g_printerr("This program must be run as root\n");
     return 1;
   }
   // TODO: add --version argument to this
   if (argc != 1) {
-    print_error("No arguments are expected\n");
+    g_printerr("No arguments are expected\n");
     return 1;
   }
 
-  print_info("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
+  g_print("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
   g_autoptr(GDBusConnection) connection = dbus_connect(true, true);
@@ -92,7 +89,7 @@ int main(int argc, char *argv[]) {
       LOGIN_OBJECT_PATH,          // object path
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_new_session, NULL, NULL);
   if (subscription_id == 0) {
-    print_error("Failed to subscribe to receive D-Bus signals for %s\n", LOGIN_OBJECT_PATH);
+    g_critical("Failed to subscribe to receive D-Bus signals for %s", LOGIN_OBJECT_PATH);
     return 1;
   }
 

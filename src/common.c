@@ -10,7 +10,7 @@ GDBusConnection *dbus_connect(bool system_bus, bool log_error) {
       g_bus_get_sync(system_bus ? G_BUS_TYPE_SYSTEM : G_BUS_TYPE_SESSION, NULL, &error);
   if (!connection) {
     if (log_error) {
-      print_error("Failed to connect to %s bus: %s\n", system_bus ? "system" : "session",
+      g_warning("Failed to connect to %s bus: %s", system_bus ? "system" : "session",
           error ? error->message : "(null)");
     }
   }
@@ -39,8 +39,8 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
       g_variant_new("(s)", "org.freedesktop.login1.Session"), NULL, G_DBUS_CALL_FLAGS_NONE,
       DBUS_CALL_WAIT, NULL, &error);
   if (!session_props) {
-    print_error(
-        "Failed to get properties for '%s': %s\n", session_path, error ? error->message : "(null)");
+    g_warning(
+        "Failed to get properties for '%s': %s", session_path, error ? error->message : "(null)");
     return false;
   }
 
@@ -59,7 +59,7 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
       if (out_uid_ptr) {
         *out_uid_ptr = user_id;
       } else if (check_uid != user_id) {
-        print_error("Session not valid due to mismatch in given user ID %u from actual owner %u\n",
+        g_warning("Session not valid due to mismatch in given user ID %u from actual owner %u",
             check_uid, user_id);
         user_match = false;
       }
@@ -99,7 +99,7 @@ gchar *get_process_env_var(guint32 pid, const char *env_var) {
   gsize env_len = 0;
   g_autoptr(GError) error = NULL;
   if (!g_file_get_contents(env_file, &env, &env_len, &error)) {
-    print_error("Failed to read file '%s': %s\n", env_file, error ? error->message : "(null)");
+    g_warning("Failed to read file '%s': %s", env_file, error ? error->message : "(null)");
     return NULL;
   }
   // strings are null separated in /proc/<pid>/environ, so use strlen to skip over
