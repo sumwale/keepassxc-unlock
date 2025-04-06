@@ -31,7 +31,7 @@ all-static-musl:
 		container_cmd=podman; \
 	fi; \
 	for platform in $(PLATFORMS); do \
-		$${container_cmd} run --platform $${platform} --rm -v `pwd`:/build -it alpine:latest /bin/sh /build/make-alpine-musl.sh; \
+		$${container_cmd} run --platform $${platform} --rm -v `pwd`:/build -it alpine:latest /bin/sh /build/make-alpine-musl.sh "$(PRODUCT_VERSION)"; \
 	done
 
 clean:
