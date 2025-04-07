@@ -34,6 +34,8 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
     return;
   }
 
+  g_message("Starting unlock service for session '%s' UID=%u", session_path, user_id);
+
   // write session.env for the service (extension should not be `.conf` which is for kdbx configs)
   char session_env[128];
   snprintf(session_env, sizeof(session_env), "%s/%u/session.env", KP_CONFIG_DIR, user_id);
@@ -50,16 +52,17 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
   fclose(session_env_fp);
 
   // start the systemd service for the user which gets instantiated from the template service
-  char service_cmd[128];
-  // deliberately have only one auto-unlock service for one user and not separate one for each
-  // session to avoid those interfering with one another (KeePassXC instance to session correlation
-  //   might be incorrect for multiple Wayland sessions)
-  // TODO: use org.freedesktop.systemd1.Manager.StartUnit("...", "replace") API
-  snprintf(
-      service_cmd, sizeof(service_cmd), "systemctl start keepassxc-unlock@%u.service", user_id);
-  g_message("Executing: %s", service_cmd);
-  if (system(service_cmd) != 0) {
-    g_critical("handle_new_session() failed to start '%s': %s", service_cmd, g_strerror(errno));
+  char service_name[128];
+  snprintf(service_name, sizeof(service_name), "keepassxc-unlock@%u.service", user_id);
+  g_autoptr(GError) error = NULL;
+  // get all properties of the session
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(conn, "org.freedesktop.systemd1",
+      "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StartUnit",
+      g_variant_new("(ss)", service_name, "replace"), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
+      NULL, &error);
+  if (!result) {
+    g_critical("handle_new_session() failed to start '%s': %s", service_name,
+        error ? error->message : "(null)");
   }
 }
 
