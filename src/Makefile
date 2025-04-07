@@ -1,4 +1,4 @@
-.PHONY: all all-static all-static-musl clean install uninstall
+SHELL = /bin/sh
 
 CC = gcc
 CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wstack-protector -O2 -fstack-protector-all -fstack-protector-strong
@@ -14,6 +14,8 @@ TARGETS_STATIC := $(patsubst %,%-$(ARCH)-static,$(TARGETS))
 PLATFORMS = linux/$(ARCH)
 STATIC_LIBS =
 
+.PHONY: all all-static all-static-musl clean install uninstall
+
 all: $(TARGETS)
 
 all-static: $(TARGETS_STATIC)
@@ -25,7 +27,7 @@ $(TARGETS_STATIC): keepassxc-%-$(ARCH)-static: %.c common.c common.h
 	$(CC) -static $(CFLAGS) $(DEFINES) $(INCLUDES) -o $@ $^ $(LDFLAGS) $(STATIC_LIBS)
 
 all-static-musl:
-	if type docker >/dev/null 2>/dev/null; then \
+	@if type docker >/dev/null 2>/dev/null; then \
 		container_cmd=docker; \
 	else \
 		container_cmd=podman; \
