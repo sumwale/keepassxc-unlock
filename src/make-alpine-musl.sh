@@ -2,8 +2,8 @@
 
 set -e
 
-apk add gcc make coreutils musl-dev glib-dev openssl-dev libeconf-dev
-apk add glib-static openssl-libs-static zlib-static util-linux-static
+apk add gcc make coreutils musl-dev glib-dev libeconf-dev
+apk add glib-static zlib-static util-linux-static
 apk cache purge
 
 cd /build

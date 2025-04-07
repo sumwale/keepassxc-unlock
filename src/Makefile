@@ -3,8 +3,8 @@ SHELL = /bin/sh
 CC = gcc
 CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wstack-protector -O2 -fstack-protector-all -fstack-protector-strong
 DEFINES = -DPRODUCT_VERSION=\"$(PRODUCT_VERSION)\"
-INCLUDES := $(shell pkg-config --cflags glib-2.0 gio-2.0 libcrypto)
-LDFLAGS = -lgio-2.0 -lgmodule-2.0 -lgobject-2.0 -lglib-2.0 -lcrypto
+INCLUDES := $(shell pkg-config --cflags glib-2.0 gio-2.0)
+LDFLAGS = -lgio-2.0 -lgmodule-2.0 -lgobject-2.0 -lglib-2.0
 
 INSTALL_BIN_DIR = /usr/local/sbin
 

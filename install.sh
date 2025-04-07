@@ -14,7 +14,7 @@ service_files="systemd/keepassxc-login-monitor.service systemd/keepassxc-unlock@
 doc_files="README.md LICENSE"
 git_site="https://github.com/sumwale/keepassxc-unlock"
 base_url="$git_site/blob/main"
-base_release_url="$git_site/releases/latest/download"
+base_release_url="$git_site/releases/download"
 # GPG key used for signing the release tarballs
 gpg_key_id=45AA1929F5181FA12E8DC3FBF6F955142B0ED1AC
 
@@ -72,9 +72,10 @@ if [ "$1" = "--build" ]; then
   done
 else
   # get the latest release tarball removing the commit ID from the product version
-  tarball=keepassxc-unlock-$(uname -m)-$(echo $product_version | sed 's/+.*$//').tar.xz
-  $get_cmd $tmp_dir/$tarball "$base_release_url/$tarball"
-  $get_cmd $tmp_dir/$tarball.sig "$base_release_url/$tarball.sig"
+  latest_version=$(uname -m)-$(echo $product_version | sed 's/+.*$//')
+  tarball=keepassxc-unlock-$latest_version.tar.xz
+  $get_cmd $tmp_dir/$tarball "$base_release_url/v$latest_version/$tarball"
+  $get_cmd $tmp_dir/$tarball.sig "$base_release_url/v$latest_version/$tarball.sig"
   if ! gpg --verify --assert-signer $gpg_key_id $tmp_dir/$tarball.sig $tmp_dir/$tarball; then
     echo
     echo -e "${fg_orange}Signature verification failed for the package"

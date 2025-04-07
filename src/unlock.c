@@ -1,7 +1,6 @@
 #include <fcntl.h>
 #include <glib.h>
 #include <glob.h>
-#include <openssl/evp.h>
 #include <pwd.h>
 #include <sys/types.h>
 
@@ -108,42 +107,42 @@ static guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const 
   }
 }
 
+// This implementation of SHA-512 calculation is 2-2.5X slower than OpenSSL's implementation
+// but the overall time is still minuscule for a small file like keepassxc executable and it
+// avoids having to add OpenSSL dependency.
+
 /// @brief Calculate the SHA-512 hash for the given file and return as a hexadecimal string.
 /// @param path path of the file for which SHA-512 hash has to be calculated
-/// @return SHA-512 hash as a hexadecimal string which should be free'd with `g_free()` after use
-static gchar *sha512sum(const char *path) {
+/// @return SHA-512 hash as a hexadecimal string which should be free'd with `g_free()` after use,
+/// or NULL on failure
+gchar *sha512sum(const char *path) {
+  // create a new checksum context for SHA-512
+  g_autoptr(GChecksum) checksum = g_checksum_new(G_CHECKSUM_SHA512);
+  if (!checksum) {
+    g_printerr("sha512sum() failed to create checksum context\n");
+    return NULL;
+  }
+
+  // open the file using low-level `open()` API for best performance
   int fd = open(path, O_RDONLY);
   if (fd == -1) {
     perror("sha512sum() failed to open file");
-    return 0;
+    return NULL;
   }
 
   // read data from the file in chunks and keep updating the checksum
   unsigned char buffer[32768];
   ssize_t bytes_read;
-  unsigned char hash[EVP_MAX_MD_SIZE];
-  unsigned int hash_len;
-  // keep on heap to maintain compatibility in the case of change in size of EVP_MD_CTX struct
-  EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-  EVP_DigestInit_ex(md_ctx, EVP_sha512(), NULL);
   while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0) {
-    EVP_DigestUpdate(md_ctx, buffer, bytes_read);
+    g_checksum_update(checksum, buffer, bytes_read);
   }
-  if (bytes_read == -1) {
-    perror("sha512sum() failed to read file");
-  } else {
-    EVP_DigestFinal_ex(md_ctx, hash, &hash_len);
-  }
+  if (bytes_read == -1) perror("sha512sum() failed to read file");
   close(fd);
-  EVP_MD_CTX_free(md_ctx);
-  if (bytes_read == -1) return 0;
+  if (bytes_read == -1) return NULL;
 
-  // convert bytes to hex string using sprintf which is not efficient but its a tiny fixed overhead
-  gchar *hex_hash = g_malloc(hash_len * 2 + 1);
-  for (size_t i = 0; i < hash_len; i++) {
-    sprintf(hex_hash + (i * 2), "%02x", hash[i]);
-  }
-  return hex_hash;
+  // get the final checksum as a hexadecimal string
+  const gchar *hex_hash = g_checksum_get_string(checksum);
+  return g_strdup(hex_hash);
 }
 
 /// @brief Send a notification to the desktop using the D-Bus `org.freedesktop.Notifications` API
@@ -215,7 +214,7 @@ static bool verify_process_exe_sha512(
   // and replace terminating newline using `strcspn` (which works even if there was no newline)
   bool mismatch = !current_sha512 || !fgets(expected_sha512, sizeof(expected_sha512), file) ||
                   (expected_sha512[strcspn(expected_sha512, "\n")] = '\0',
-                      g_strcmp0(current_sha512, expected_sha512) != 0);
+                      strcmp(current_sha512, expected_sha512) != 0);
   fclose(file);
   if (mismatch) {
     // `kp_exe_full` stores the actual executable that /proc/<pid>/exe points to, while
@@ -394,7 +393,7 @@ static void handle_session_event(GDBusConnection *system_conn, const char *sende
     GVariant *parameters, gpointer user_data) {
   MonitoredSession *session_data = (MonitoredSession *)user_data;
   g_autoptr(GVariantIter) iter = NULL;
-  const char *key;
+  const gchar *key = NULL;
   GVariant *value = NULL;
   g_variant_get(parameters, "(sa{sv}as)", NULL, &iter, NULL);
   while (g_variant_iter_loop(iter, "{&sv}", &key, &value)) {
@@ -515,7 +514,7 @@ static gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar 
 
 
 int main(int argc, char *argv[]) {
-  if (argc == 2 && g_strcmp0(argv[1], "--version") == 0) {
+  if (argc == 2 && strcmp(argv[1], "--version") == 0) {
     g_print("%s\n", PRODUCT_VERSION);
     return 0;
   }

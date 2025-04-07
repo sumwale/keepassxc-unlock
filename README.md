@@ -92,7 +92,10 @@ individual files to help remember the passwords and key file paths.
 
 ## Installation
 
-Latest version:
+The install script uses `git` to determine the version, so ensure it is installed.
+(e.g. `sudo apt install git` on Debian/Ubuntu, `sudo dnf install git` on Fedora/RHEL).
+
+Install the latest version using:
 
 ```sh
 curl -fsSL "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash

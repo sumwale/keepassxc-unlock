@@ -50,7 +50,7 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   g_variant_get(session_props, "(a{sv})", &iter);
 
   bool user_match = false, has_supported_type = false, is_remote = false, is_active = false;
-  const char *key = NULL;
+  const gchar *key = NULL;
   GVariant *value = NULL;
   while (g_variant_iter_loop(iter, "{&sv}", &key, &value)) {
     if (g_strcmp0(key, "User") == 0) {
