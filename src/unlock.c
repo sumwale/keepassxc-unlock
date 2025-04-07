@@ -11,8 +11,6 @@
 #define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
 
 
-// TODO: mark methods as static here and in login-monitor.c
-
 /// @brief Holds information of the session being monitored and passed to the `user_data` parameter
 ///        of the `handle_session_event` and `handle_session_close` callbacks. Also passed to the
 ///        main `unlock_databases` method.
@@ -30,7 +28,7 @@ typedef struct {
 
 /// @brief Show usage of this program
 /// @param script_name name of the invoking script as obtained from `argv[0]`
-void show_usage(const char *script_name) {
+static void show_usage(const char *script_name) {
   g_print("\nUsage: %s [--version] <USER_ID> <SESSION_PATH>\n", script_name);
   g_print("\nMonitor a session for login and screen unlock events to unlock configured KeepassXC "
           "databases\n");
@@ -44,7 +42,7 @@ void show_usage(const char *script_name) {
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param session_path path of the selected session
 /// @return boolean `LockedHint` property of the session
-bool is_locked(GDBusConnection *system_conn, const char *session_path) {
+static bool is_locked(GDBusConnection *system_conn, const char *session_path) {
   g_autoptr(GError) error = NULL;
   g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, LOGIN_OBJECT_NAME,
       session_path, DBUS_MAIN_OBJECT_NAME ".Properties", "Get",
@@ -64,7 +62,7 @@ bool is_locked(GDBusConnection *system_conn, const char *session_path) {
 /// @brief Change the effective user ID to the given one with error checking.
 ///        Exit the whole program with code 1 if it fails to change effective UID back to 0.
 /// @param uid the user ID to be set as the effective UID
-void change_euid(uid_t uid) {
+static void change_euid(uid_t uid) {
   if (geteuid() == uid) return;
   if (seteuid(uid) != 0) {
     g_critical("change_euid() failed in seteuid to %u: %s", uid, g_strerror(errno));
@@ -82,7 +80,7 @@ void change_euid(uid_t uid) {
 /// @param log_error if `true` then log connection error to `stderr`
 /// @return an instance of `GDBusConnection*` that may be shared among callers and must be released
 ///         using `g_object_unref()`/`g_autoptr()`, or NULL if the connection was unsuccessful
-GDBusConnection *dbus_session_connect(uid_t user_id, bool log_error) {
+static GDBusConnection *dbus_session_connect(uid_t user_id, bool log_error) {
   // switch effective ID to the user before connecting since this is the user's session bus
   change_euid(user_id);
   GDBusConnection *session_conn = dbus_connect(false, log_error);
@@ -96,7 +94,7 @@ GDBusConnection *dbus_session_connect(uid_t user_id, bool log_error) {
 /// @param session_conn the `GBusConnection` object for the user's session D-Bus
 /// @param dbus_api the D-Bus API that the process has registered
 /// @return the process ID registered for the D-Bus API or 0 if something went wrong
-guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const char *dbus_api) {
+static guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const char *dbus_api) {
   g_autoptr(GError) error = NULL;
   g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.DBus",
       "/", DBUS_MAIN_OBJECT_NAME, "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api),
@@ -113,7 +111,7 @@ guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const char *d
 /// @brief Calculate the SHA-512 hash for the given file and return as a hexadecimal string.
 /// @param path path of the file for which SHA-512 hash has to be calculated
 /// @return SHA-512 hash as a hexadecimal string which should be free'd with `g_free()` after use
-gchar *sha512sum(const char *path) {
+static gchar *sha512sum(const char *path) {
   int fd = open(path, O_RDONLY);
   if (fd == -1) {
     perror("sha512sum() failed to open file");
@@ -158,8 +156,8 @@ gchar *sha512sum(const char *path) {
 /// @param urgency the urgency level of the notification (0 - low, 1 - normal, 2 - critical)
 /// @param timeout duration, in milliseconds, for the notification to appear on screen
 /// @return `true` if the notification was relayed successfully, `false` otherwise
-bool send_session_notification(GDBusConnection *session_conn, const gchar *name, const gchar *icon,
-    const gchar *summary, const gchar *body, guint8 urgency, gint32 timeout) {
+static bool send_session_notification(GDBusConnection *session_conn, const gchar *name,
+    const gchar *icon, const gchar *summary, const gchar *body, guint8 urgency, gint32 timeout) {
   g_auto(GVariantBuilder) hints;
   g_variant_builder_init(&hints, G_VARIANT_TYPE_VARDICT);
   g_variant_builder_add(&hints, "{sv}", "urgency", g_variant_new_byte(urgency));
@@ -179,7 +177,7 @@ bool send_session_notification(GDBusConnection *session_conn, const gchar *name,
 /// @param is_wayland `true` if the session is a Wayland one, else `false` if it is X11
 /// @param display the $DISPLAY variable for the session as retrieved from its `Display` property
 /// @return `true` if the KeePassXC is running in the session else `false`
-bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar *display) {
+static bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar *display) {
   if (is_wayland) {
     // the `Display` property of the session is not set for the case of Wayland, and there is no way
     // to check if this is the same Wayland session (multiple Wayland sessions break stuff in many
@@ -199,7 +197,7 @@ bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar *displa
 /// @param user_conf_dir user's configuration directory (`/etc/keepassxc-unlock/<uid>`)
 /// @param kp_pid process ID of KeePassXC
 /// @return `true` if the checksum matched else `false`
-bool verify_process_exe_sha512(
+static bool verify_process_exe_sha512(
     GDBusConnection *session_conn, const char *user_conf_dir, guint32 kp_pid) {
   // get the executable's SHA-512 hash from /proc/<pid>/exe and compare against the
   // recorded good checksum
@@ -241,7 +239,7 @@ bool verify_process_exe_sha512(
 }
 
 /// @brief Callback invoked when the `openDatabase` call finishes that logs if there was an error.
-void on_database_unlock(GDBusConnection *session_conn, GAsyncResult *res, gpointer data) {
+static void on_database_unlock(GDBusConnection *session_conn, GAsyncResult *res, gpointer data) {
   g_autofree gchar *kdbx_file = (gchar *)data;
 
   // From glib repository's gio/tests/gdbus-connection.c:
@@ -265,7 +263,7 @@ void on_database_unlock(GDBusConnection *session_conn, GAsyncResult *res, gpoint
 /// @return `true` if connection was successful and unlock was attempted (though one or more
 ///         databases may have failed to unlock due to other reasons), and `false` if connection to
 ///         KeePassXC failed or session was still locked
-bool unlock_databases(GDBusConnection *system_conn, const MonitoredSession *session_data,
+static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSession *session_data,
     int wait_secs, bool check_main_loop) {
   g_assert(session_data);
 
@@ -391,7 +389,7 @@ bool unlock_databases(GDBusConnection *system_conn, const MonitoredSession *sess
 /// @param parameters parameters of the raised signal
 /// @param user_data custom user data sent through with the signal which should be pointer to
 ///                  `MonitoredSession`
-void handle_session_event(GDBusConnection *system_conn, const char *sender_name,
+static void handle_session_event(GDBusConnection *system_conn, const char *sender_name,
     const char *object_path, const char *interface_name, const char *signal_name,
     GVariant *parameters, gpointer user_data) {
   MonitoredSession *session_data = (MonitoredSession *)user_data;
@@ -419,7 +417,7 @@ void handle_session_event(GDBusConnection *system_conn, const char *sender_name,
 }
 
 /// @brief Callback to handle session close for the selected session
-void handle_session_close(GDBusConnection *system_conn, const char *sender_name,
+static void handle_session_close(GDBusConnection *system_conn, const char *sender_name,
     const char *object_path, const char *interface_name, const char *signal_name,
     GVariant *parameters, gpointer user_data) {
   MonitoredSession *session_data = (MonitoredSession *)user_data;
@@ -432,7 +430,7 @@ void handle_session_close(GDBusConnection *system_conn, const char *sender_name,
 }
 
 /// @brief Callback to handle KeePassXC startup when it was not present at the start of this process
-void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_name,
+static void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_name,
     const char *object_path, const char *interface_name, const char *signal_name,
     GVariant *parameters, gpointer user_data) {
   MonitoredSession *session_data = (MonitoredSession *)user_data;
@@ -456,13 +454,19 @@ void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_na
   }
 }
 
-static void set_last_session_bus_address(
-    const guint32 *pids, int pids_idx, gchar **ret_bus_address) {
+/// @brief Get the value of `DBUS_SESSION_BUS_ADDRESS` environment variable from the environment of
+///        the last process (where it is set) in the given list of process IDs.
+/// @param pids array of process IDs
+/// @param pids_len length of `pids` array
+/// @param ret_bus_address the result, if any, is stored in this variable and any previous value
+///                        pointed by this variable is `g_free()`d; this cannot be NULL
+static void get_last_session_bus_address(
+    const guint32 *pids, int pids_len, gchar **ret_bus_address) {
   g_assert(ret_bus_address != NULL);
 
   gchar *bus_address = NULL;
-  while (--pids_idx >= 0) {
-    if ((bus_address = get_process_env_var(pids[pids_idx], "DBUS_SESSION_BUS_ADDRESS")) != NULL) {
+  while (--pids_len >= 0) {
+    if ((bus_address = get_process_env_var(pids[pids_len], "DBUS_SESSION_BUS_ADDRESS")) != NULL) {
       g_free(*ret_bus_address);
       *ret_bus_address = bus_address;
       return;
@@ -470,6 +474,13 @@ static void set_last_session_bus_address(
   }
 }
 
+/// @brief Get the value of `DBUS_SESSION_BUS_ADDRESS` environment variable from the environment of
+///        the processes belonging to the given `Scope`. The value from the last process in the list
+///        having the variable set is used.
+/// @param system_conn the `GBusConnection` object for the system D-Bus
+/// @param scope the `Scope` where the `DBUS_SESSION_BUS_ADDRESS` has to be searched
+/// @return the value of the `DBUS_SESSION_BUS_ADDRESS` environment variable from the last process
+///         in the given scope, or NULL if no process has a setting for the variable
 static gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar *scope) {
   if (!scope) return NULL;
   // get the processes under this systemd scope unit, traverse them in reverse and return the first
@@ -493,12 +504,12 @@ static gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar 
   gchar *bus_address = NULL;
   while (g_variant_iter_next(iter, "(sus)", NULL, &current_pid, NULL)) {
     if (pids_idx >= (int)(sizeof(pids) / sizeof(*pids))) {
-      set_last_session_bus_address(pids, pids_idx, &bus_address);
+      get_last_session_bus_address(pids, pids_idx, &bus_address);
       pids_idx = 0;
     }
     pids[pids_idx++] = current_pid;
   }
-  set_last_session_bus_address(pids, pids_idx, &bus_address);
+  get_last_session_bus_address(pids, pids_idx, &bus_address);
   return bus_address;
 }
 
@@ -556,9 +567,14 @@ int main(int argc, char *argv[]) {
   // point `DBUS_SESSION_BUS_ADDRESS` to the user's session dbus
   g_autofree gchar *dbus_address = get_session_bus_address(system_conn, scope);
   // fallback to default if `DBUS_SESSION_BUS_ADDRESS` is not set for any process of this session
-  // (note that keepassxc will likely not belong to this session either since in systemd-logind
-  //    setups user's session systemd daemon is root for most which detaches from session)
-  if (!dbus_address) dbus_address = g_strdup_printf("unix:path=/run/user/%u/bus", user_id);
+  // (note that keepassxc will likely not belong to this session, since in systemd-logind setups
+  //    user's session systemd daemon is root for most processes which detaches from session)
+  if (!dbus_address) {
+    g_warning("Failed to find DBUS_SESSION_BUS_ADDRESS in the environment of any of the processes "
+              "belonging to the scope '%s' of this session. Failling back to the default value.",
+        scope);
+    dbus_address = g_strdup_printf("unix:path=/run/user/%u/bus", user_id);
+  }
   setenv("DBUS_SESSION_BUS_ADDRESS", dbus_address, 1);
 
   // start monitoring the session
@@ -612,6 +628,7 @@ int main(int argc, char *argv[]) {
   // run the main loop
   g_main_loop_run(loop);
 
+  // unsubscribe
   guint kp_subscription_id = g_atomic_int_exchange(&user_data.kp_subscription_id, 0);
   if (kp_subscription_id != 0 && session_conn) {
     g_dbus_connection_signal_unsubscribe(session_conn, kp_subscription_id);

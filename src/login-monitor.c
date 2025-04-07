@@ -11,9 +11,9 @@
 /// @param signal_name name of the D-Bus signal that was raised (should be `SessionNew`)
 /// @param parameters parameters of the raised signal
 /// @param user_data custom user data sent through with the event which is ignored for this method
-void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const gchar *object_path,
-    const gchar *interface_name, const gchar *signal_name, GVariant *parameters,
-    gpointer user_data) {
+static void handle_new_session(GDBusConnection *conn, const gchar *sender_name,
+    const gchar *object_path, const gchar *interface_name, const gchar *signal_name,
+    GVariant *parameters, gpointer user_data) {
   gchar *session_path = NULL;
   // extract session path from the parameters
   g_variant_get(parameters, "(s&o)", NULL, &session_path);    // `&o` avoids `g_free()`
