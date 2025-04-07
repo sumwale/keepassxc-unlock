@@ -19,6 +19,7 @@ function usage() {
   echo
   echo "Arguments:"
   echo "  --version       show the version string and exit"
+  echo
   echo "  <USER>          name of the user who owns the database"
   echo "  <KDBX>          path to the KDBX database (can be relative or absolute)"
   echo

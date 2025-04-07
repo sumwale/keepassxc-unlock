@@ -68,7 +68,7 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
 
 
 int main(int argc, char *argv[]) {
-  if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+  if (argc == 2 && g_strcmp0(argv[1], "--version") == 0) {
     g_print("%s\n", PRODUCT_VERSION);
     return 0;
   }

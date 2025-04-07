@@ -81,6 +81,7 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   if (user_match && has_supported_type && !is_remote && is_active) {
     return true;
   } else {
+    // don't expect caller to free `display_ptr` allocated by this method in the case of failure
     if (display_ptr && *display_ptr) {
       g_free(*display_ptr);
       *display_ptr = NULL;

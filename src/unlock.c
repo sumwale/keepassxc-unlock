@@ -29,12 +29,13 @@ typedef struct {
 /// @brief Show usage of this program
 /// @param script_name name of the invoking script as obtained from `argv[0]`
 void show_usage(const char *script_name) {
-  g_print("\nUsage: %s <USER>\n", script_name);
+  g_print("\nUsage: %s [--version] <USER_ID> <SESSION_PATH>\n", script_name);
   g_print("\nMonitor a session for login and screen unlock events to unlock configured KeepassXC "
           "databases\n");
   g_print("\nArguments:\n");
-  g_print("  <USER_ID>       numeric ID of user who owns the session to be monitored\n\n");
-  g_print("  <SESSION_ID>    the session ID to be monitored\n\n");
+  g_print("  --version       show the version string and exit\n\n");
+  g_print("  <USER_ID>       numeric ID of user who owns the session to be monitored\n");
+  g_print("  <SESSION_PATH>  the path of the session (ex. /org/freedesktop/login1/session/_3)\n\n");
 }
 
 /// @brief Check if given session is locked (i.e. `LockedHint` is true)
@@ -446,6 +447,10 @@ void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_na
 
 
 int main(int argc, char *argv[]) {
+  if (argc == 2 && g_strcmp0(argv[1], "--version") == 0) {
+    g_print("%s\n", PRODUCT_VERSION);
+    return 0;
+  }
   if (geteuid() != 0) {
     g_printerr("This program must be run as root\n");
     return 1;
