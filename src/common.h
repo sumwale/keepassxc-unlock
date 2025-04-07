@@ -47,9 +47,12 @@ extern bool user_has_db_configs(guint32 user_id);
 ///                       type is `wayland` else with `false` when it is `x11`
 /// @param display_ptr pointer to `gchar*` string that is filled with the value of `Display`
 ///                    property if non-NULL; this should be released with `g_free()` after use
+/// @param display_ptr pointer to `gchar*` string that is filled with the value of `Scope`
+///                    property if non-NULL; this should be released with `g_free()` after use
 /// @return `true` if auto-unlock can be attempted for the session else `false`
 extern bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_path,
-    guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr);
+    guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr,
+    gchar **scope_ptr);
 
 /// @brief Get value of an environment variable for a given process.
 /// @param pid the ID of the process

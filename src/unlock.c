@@ -11,6 +11,8 @@
 #define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
 
 
+// TODO: mark methods as static here and in login-monitor.c
+
 /// @brief Holds information of the session being monitored and passed to the `user_data` parameter
 ///        of the `handle_session_event` and `handle_session_close` callbacks. Also passed to the
 ///        main `unlock_databases` method.
@@ -454,6 +456,52 @@ void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_na
   }
 }
 
+static void set_last_session_bus_address(
+    const guint32 *pids, int pids_idx, gchar **ret_bus_address) {
+  g_assert(ret_bus_address != NULL);
+
+  gchar *bus_address = NULL;
+  while (--pids_idx >= 0) {
+    if ((bus_address = get_process_env_var(pids[pids_idx], "DBUS_SESSION_BUS_ADDRESS")) != NULL) {
+      g_free(*ret_bus_address);
+      *ret_bus_address = bus_address;
+      return;
+    }
+  }
+}
+
+static gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar *scope) {
+  if (!scope) return NULL;
+  // get the processes under this systemd scope unit, traverse them in reverse and return the first
+  // `DBUS_SESSION_BUS_ADDRESS` found
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
+      "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "GetUnitProcesses",
+      g_variant_new("(s)", scope), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
+  if (!result) {
+    g_warning(
+        "Failed to get processes for unit '%s': %s", scope, error ? error->message : "(null)");
+    return NULL;
+  }
+
+  g_autoptr(GVariantIter) iter = NULL;
+  g_variant_get(result, "(a(sus))", &iter);
+  // keep a buffer of PIDs, and if it becomes full then keep the last defined session bus address
+  // then start over in the buffer again
+  guint32 current_pid = 0, pids[64];
+  int pids_idx = 0;
+  gchar *bus_address = NULL;
+  while (g_variant_iter_next(iter, "(sus)", NULL, &current_pid, NULL)) {
+    if (pids_idx >= (int)(sizeof(pids) / sizeof(*pids))) {
+      set_last_session_bus_address(pids, pids_idx, &bus_address);
+      pids_idx = 0;
+    }
+    pids[pids_idx++] = current_pid;
+  }
+  set_last_session_bus_address(pids, pids_idx, &bus_address);
+  return bus_address;
+}
+
 
 int main(int argc, char *argv[]) {
   if (argc == 2 && g_strcmp0(argv[1], "--version") == 0) {
@@ -496,17 +544,21 @@ int main(int argc, char *argv[]) {
 
   // get the session `Type` and `Display` properties
   g_autofree gchar *display = NULL;
+  g_autofree gchar *scope = NULL;
   bool is_wayland = false;
-  if (!session_valid_for_unlock(system_conn, session_path, user_id, NULL, &is_wayland, &display)) {
+  if (!session_valid_for_unlock(
+          system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope)) {
     g_warning(
         "No valid X11/Wayland session found for UID=%u sessionPath='%s'", user_id, session_path);
     return 0;
   }
 
-  // point DBUS_SESSION_BUS_ADDRESS to the user's session dbus
-  char dbus_address[128];
-  // TODO: obtain this from /proc/<pid>/environ of the lead process of the session
-  snprintf(dbus_address, sizeof(dbus_address), "unix:path=/run/user/%u/bus", user_id);
+  // point `DBUS_SESSION_BUS_ADDRESS` to the user's session dbus
+  g_autofree gchar *dbus_address = get_session_bus_address(system_conn, scope);
+  // fallback to default if `DBUS_SESSION_BUS_ADDRESS` is not set for any process of this session
+  // (note that keepassxc will likely not belong to this session either since in systemd-logind
+  //    setups user's session systemd daemon is root for most which detaches from session)
+  if (!dbus_address) dbus_address = g_strdup_printf("unix:path=/run/user/%u/bus", user_id);
   setenv("DBUS_SESSION_BUS_ADDRESS", dbus_address, 1);
 
   // start monitoring the session

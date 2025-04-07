@@ -21,7 +21,7 @@ void handle_new_session(GDBusConnection *conn, const gchar *sender_name, const g
   // check if the session can be a target for auto-unlock and also get the owner
   g_message("Checking if session '%s' can be auto-unlocked and looking up its owner", session_path);
   guint32 user_id = 0;
-  if (!session_valid_for_unlock(conn, session_path, 0, &user_id, NULL, NULL)) {
+  if (!session_valid_for_unlock(conn, session_path, 0, &user_id, NULL, NULL, NULL)) {
     g_message("Ignoring session which is not a valid target for auto-unlock");
     return;
   }

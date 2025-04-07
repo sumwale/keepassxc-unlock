@@ -31,7 +31,8 @@ bool user_has_db_configs(guint32 user_id) {
 }
 
 bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_path,
-    guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr) {
+    guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr,
+    gchar **scope_ptr) {
   g_autoptr(GError) error = NULL;
   // get all properties of the session
   g_autoptr(GVariant) session_props = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME,
@@ -67,6 +68,8 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
       if (display_ptr) g_variant_get(value, "s", display_ptr);
     } else if (g_strcmp0(key, "Remote") == 0) {
       is_remote = g_variant_get_boolean(value);
+    } else if (g_strcmp0(key, "Scope") == 0) {
+      if (scope_ptr) g_variant_get(value, "s", scope_ptr);
     } else if (g_strcmp0(key, "Type") == 0) {
       const char *type_val = g_variant_get_string(value, NULL);
       bool is_wayland = g_strcmp0(type_val, "wayland") == 0;
@@ -81,10 +84,14 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   if (user_match && has_supported_type && !is_remote && is_active) {
     return true;
   } else {
-    // don't expect caller to free `display_ptr` allocated by this method in the case of failure
+    // don't expect caller to free strings allocated by this method in the case of failure
     if (display_ptr && *display_ptr) {
       g_free(*display_ptr);
       *display_ptr = NULL;
+    }
+    if (scope_ptr && *scope_ptr) {
+      g_free(*scope_ptr);
+      *scope_ptr = NULL;
     }
     return false;
   }
