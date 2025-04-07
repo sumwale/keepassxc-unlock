@@ -27,7 +27,7 @@ $(SETUP): $(SETUP).in
 
 clean:
 	$(MAKE) -C $(SRC_DIR) clean
-	rm -f $(SETUP) keepassxc-unlock-*-$(PRODUCT_VERSION).tar.*
+	rm -f $(SETUP) keepassxc-unlock-*.tar.*
 
 install:
 	$(MAKE) -C $(SRC_DIR) install

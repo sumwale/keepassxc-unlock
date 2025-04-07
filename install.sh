@@ -71,7 +71,8 @@ if [ "$1" = "--build" ]; then
     rm -f $tmp_dir/$(basename $file)
   done
 else
-  tarball=keepassxc-unlock-$(uname -m)-$product_version.tar.xz
+  # get the latest release tarball removing the commit ID from the product version
+  tarball=keepassxc-unlock-$(uname -m)-$(echo $product_version | sed 's/+.*$//').tar.xz
   $get_cmd $tmp_dir/$tarball "$base_release_url/$tarball"
   $get_cmd $tmp_dir/$tarball.sig "$base_release_url/$tarball.sig"
   if ! gpg --verify --assert-signer $gpg_key_id $tmp_dir/$tarball.sig $tmp_dir/$tarball; then
