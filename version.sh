@@ -16,8 +16,9 @@ else
   latest_tag=$(git describe --tag --abbrev=0)
   latest_tag_id=$(git rev-list -n1 $latest_tag)
 fi
+latest_tag=${latest_tag#v}
 if [ "$head_id" = "$latest_tag_id" ]; then
   echo "$latest_tag"
 else
-  echo "$latest_tag-$(git rev-parse --short HEAD)"
+  echo "$latest_tag+$(git rev-parse --short HEAD)"
 fi
