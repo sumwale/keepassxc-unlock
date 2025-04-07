@@ -9,13 +9,14 @@ fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
 shell_scripts="keepassxc-unlock-setup.in version.sh"
-musl_suffix="-$(uname -m)-static"
-musl_files="keepassxc-login-monitor$musl_suffix keepassxc-unlock$musl_suffix"
 src_files="src/login-monitor.c src/unlock.c src/common.c src/common.h src/Makefile"
 service_files="systemd/keepassxc-login-monitor.service systemd/keepassxc-unlock@.service"
 doc_files="README.md LICENSE"
-base_url="https://github.com/sumwale/keepassxc-unlock/blob/main"
-base_release_url="https://github.com/sumwale/keepassxc-unlock/releases/latest/download"
+git_site="https://github.com/sumwale/keepassxc-unlock"
+base_url="$git_site/blob/main"
+base_release_url="$git_site/releases/latest/download"
+# GPG key used for signing the release tarballs
+gpg_key_id=45AA1929F5181FA12E8DC3FBF6F955142B0ED1AC
 
 # ensure that system PATHs are always searched first
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin:$PATH"
@@ -61,7 +62,7 @@ for file in $tmp_dir/*.in; do
   rm -f $file
 done
 if [ "$1" = "--build" ]; then
-  echo -e "${fg_cyan}Building from source...$fg_reset"
+  echo -e "${fg_cyan}Building the latest git code from source...$fg_reset"
   for file in $src_files; do
     $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
   done
@@ -70,8 +71,28 @@ if [ "$1" = "--build" ]; then
     rm -f $tmp_dir/$(basename $file)
   done
 else
-  for file in $musl_files; do
-    $get_cmd $tmp_dir/$(echo $file | sed "s/$musl_suffix//") "$base_release_url/$file"
+  tarball=keepassxc-unlock-$(uname -m)-$product_version.tar.xz
+  $get_cmd $tmp_dir/$tarball "$base_release_url/$tarball"
+  $get_cmd $tmp_dir/$tarball.sig "$base_release_url/$tarball.sig"
+  if ! gpg --verify --assert-signer $gpg_key_id $tmp_dir/$tarball.sig $tmp_dir/$tarball; then
+    echo
+    echo -e "${fg_orange}Signature verification failed for the package"
+    echo -en "${fg_cyan}Fetch the public key and try again? (Y/n) $fg_reset"
+    set +e
+    read -r resp < /dev/tty
+    set -e
+    if [ "$resp" = n -o "$resp" = N ]; then
+      echo -e "${fg_red}Aborting installation$fg_reset"
+      exit 3
+    fi
+    gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys $gpg_key_id
+    gpg --verify --assert-signer $gpg_key_id $tmp_dir/$tarball.sig $tmp_dir/$tarball
+  fi
+  tar -C $tmp_dir -xvf $tmp_dir/$tarball
+  rm -f $tmp_dir/$tarball $tmp_dir/$tarball.sig
+  static_suffix="-$(uname -m)-static"
+  for file in $tmp_dir/*$static_suffix; do
+    mv $file $(echo $file | sed 's/'$static_suffix'$//')
   done
 fi
 sudo install -t /usr/local/sbin -m 0755 -o root -g root $tmp_dir/*

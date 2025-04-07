@@ -108,8 +108,10 @@ This will install the binaries in `/usr/local/sbin` and a systemd service file i
 `/etc/systemd/system`. The LICENSE and doc files are also installed in
 `/usr/local/share/doc/keepassxc-unlock`.
 
-The main systemd service binaries are statically linked for best compability and will
-work on all Linux distributions.
+The binaries are statically linked for best compability and will work on all Linux
+distributions. The packages on the [releases](https://github.com/sumwale/keepassxc-unlock/releases)
+page that are fetched by the install script are signed with a GnuPG key that is verified
+before installation.
 
 If you prefer building the binaries from source, then a dynamically linked version can be
 built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above:
