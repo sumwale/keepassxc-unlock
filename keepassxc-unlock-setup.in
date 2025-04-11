@@ -160,7 +160,6 @@ fi
 
 echo
 echo Verifying the given parameters, please ensure KeePassXC is running and lock this database
-user_id=1000
 DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$user_id/bus"
 do_sudo="sudo -u #$user_id env DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
 for i in $(seq 5); do
