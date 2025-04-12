@@ -128,7 +128,7 @@ wget -qO- "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=
 
 This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `readline`.
 As an example, for Debian/Ubuntu based systems, these dependencies can be installed with:
-`sudo apt install build-essential libglib2.0-dev libssl-dev` or on Fedora/RHEL based
+`sudo apt install build-essential libglib2.0-dev libreadline-dev` or on Fedora/RHEL based
 systems with: `sudo dnf install gcc make glib2-devel readline-devel`.
 
 To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
