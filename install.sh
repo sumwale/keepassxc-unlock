@@ -85,6 +85,7 @@ else
   tar -C $tmp_dir -xvf $tmp_dir/$tarball
   rm -f $tmp_dir/$tarball $tmp_dir/$tarball.sig
   static_suffix="-$(uname -m)-static"
+  chmod 0755 $tmp_dir/*$static_suffix
   for file in $tmp_dir/*$static_suffix; do
     if [ -L $file ]; then
       target=$(readlink $file)
@@ -96,7 +97,6 @@ else
   done
 fi
 for p in $tmp_dir/*; do
-  chmod 0755 $p
   sudo rm -f /usr/local/sbin/`basename $p`
   sudo cp -d --preserve=mode,timestamps $p /usr/local/sbin/
   rm -f $p
