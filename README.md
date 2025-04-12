@@ -53,7 +53,8 @@ which is AES256-GCM + SHA256 (see [systemd-creds man page](https://www.man7.org/
 It will need to be run for at least one of the user's databases to verify and register
 the checksum of the new keepassxc executable. This can be done automatically in future
 if this gets integrated into KeePassXC distribution (except if it is running inside
-    a containerized environment that cannot update the host's system files).
+    a containerized environment that can neither update the host's system files
+    nor use host's PolicyKit policies).
 
 **Now that I have to never enter the passwords, I will likely forget them**
 
@@ -135,8 +136,6 @@ To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
 
 
 ## Configuration
-
-The comments output at the end the install script mention the required configuration.
 
 Register the KeePassXC databases to be unlocked automatically by running the
 `keepassxc-unlock-setup` script. This has to be run as root user and takes the name
