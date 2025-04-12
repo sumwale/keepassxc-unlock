@@ -1,7 +1,8 @@
+#include "common.h"
+
+#include <fcntl.h>
 #include <glob.h>
 #include <sys/types.h>
-
-#include "common.h"
 
 
 GDBusConnection *dbus_connect(bool system_bus, bool log_error) {
@@ -17,12 +18,32 @@ GDBusConnection *dbus_connect(bool system_bus, bool log_error) {
   return connection;
 }
 
+void change_euid(uid_t uid) {
+  if (geteuid() == uid) return;
+  if (seteuid(uid) != 0) {
+    g_critical("change_euid() failed in seteuid to %u: %s", uid, STR_ERROR);
+    if (uid == 0) {    // failed to switch back to root?
+      g_error("Cannot switch back to root, terminating...");
+      exit(1);
+    }
+  }
+}
+
+GDBusConnection *dbus_session_connect(uid_t user_id, bool log_error) {
+  // switch effective ID to the user before connecting since this is the user's session bus
+  change_euid(user_id);
+  GDBusConnection *session_conn = dbus_connect(false, log_error);
+  change_euid(0);
+  return session_conn;
+}
+
 bool user_has_db_configs(guint32 user_id) {
   char conf_pattern[128];
   glob_t globbuf;
 
   // construct the configuration directory and pattern
-  snprintf(conf_pattern, sizeof(conf_pattern), "%s/%u/*.conf", KP_CONFIG_DIR, user_id);
+  snprintf(conf_pattern, sizeof(conf_pattern), "%s/%u/" KP_CONFIG_PREFIX "*.conf", KP_CONFIG_DIR,
+      user_id);
 
   // check if there are any configuration files in the user-specific configuration directory
   bool has_configs = glob(conf_pattern, 0, NULL, &globbuf) == 0 && globbuf.gl_pathc > 0;
@@ -30,12 +51,12 @@ bool user_has_db_configs(guint32 user_id) {
   return has_configs;
 }
 
-bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_path,
+bool session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_path,
     guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr,
     gchar **scope_ptr) {
   g_autoptr(GError) error = NULL;
   // get all properties of the session
-  g_autoptr(GVariant) session_props = g_dbus_connection_call_sync(connection, LOGIN_OBJECT_NAME,
+  g_autoptr(GVariant) session_props = g_dbus_connection_call_sync(system_conn, LOGIN_OBJECT_NAME,
       session_path, DBUS_MAIN_OBJECT_NAME ".Properties", "GetAll",
       g_variant_new("(s)", "org.freedesktop.login1.Session"), NULL, G_DBUS_CALL_FLAGS_NONE,
       DBUS_CALL_WAIT, NULL, &error);
@@ -81,20 +102,7 @@ bool session_valid_for_unlock(GDBusConnection *connection, const gchar *session_
   }
 
   // a session is a target for auto-unlock if it is of a supported type, not remote, and active
-  if (user_match && has_supported_type && !is_remote && is_active) {
-    return true;
-  } else {
-    // don't expect caller to free strings allocated by this method in the case of failure
-    if (display_ptr && *display_ptr) {
-      g_free(*display_ptr);
-      *display_ptr = NULL;
-    }
-    if (scope_ptr && *scope_ptr) {
-      g_free(*scope_ptr);
-      *scope_ptr = NULL;
-    }
-    return false;
-  }
+  return user_match && has_supported_type && !is_remote && is_active;
 }
 
 gchar *get_process_env_var(guint32 pid, const char *env_var) {
@@ -123,4 +131,157 @@ gchar *get_process_env_var(guint32 pid, const char *env_var) {
     env_ptr += current_len + 1;
   }
   return var_value;
+}
+
+guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const char *dbus_api) {
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.DBus",
+      "/", DBUS_MAIN_OBJECT_NAME, "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api),
+      NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
+  if (result) {
+    guint32 pid = 0;
+    g_variant_get(result, "(u)", &pid);
+    return pid;
+  } else {
+    return 0;
+  }
+}
+
+gchar *sha512sum(const char *path) {
+  // create a new checksum context for SHA-512
+  g_autoptr(GChecksum) checksum = g_checksum_new(G_CHECKSUM_SHA512);
+  if (!checksum) {
+    g_warning("sha512sum() failed to create checksum context");
+    return NULL;
+  }
+
+  // open the file using low-level `open()` API for best performance
+  int fd = open(path, O_RDONLY);
+  if (fd == -1) {
+    g_warning("sha512sum() failed to open file: %s", STR_ERROR);
+    return NULL;
+  }
+
+  // read data from the file in chunks and keep updating the checksum
+  guchar buffer[32768];
+  ssize_t bytes_read;
+  while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0) {
+    g_checksum_update(checksum, buffer, bytes_read);
+  }
+  if (bytes_read == -1) g_warning("sha512sum() failed to read file: %s", STR_ERROR);
+  close(fd);
+  if (bytes_read == -1) return NULL;
+
+  // get the final checksum as a hexadecimal string
+  const gchar *hex_hash = g_checksum_get_string(checksum);
+  return g_strdup(hex_hash);
+}
+
+int read_configuration_file(const char *conf_file, gchar **kdbx_file, gchar **key_file) {
+  FILE *file = fopen(conf_file, "r");
+  if (!file) {
+    g_warning("Failed to open configuration file: %s", conf_file);
+    return -1;
+  }
+
+  char line[PATH_MAX + 4];
+  int passwd_start_line = -1, current_line = 0;
+  while (fgets(line, sizeof(line), file)) {
+    current_line++;
+    if (strncmp(line, "DB=", 3) == 0) {
+      if (kdbx_file) {
+        *kdbx_file = g_strdup(line + 3);
+        (*kdbx_file)[strcspn(*kdbx_file, "\n")] = '\0';
+      }
+    } else if (strncmp(line, "KEY=", 4) == 0) {
+      if (key_file) {
+        *key_file = g_strdup(line + 4);
+        (*key_file)[strcspn(*key_file, "\n")] = '\0';
+      }
+    } else if (strncmp(line, "PASSWORD:", 9) != 0) {
+      // password starts after the line having PASSWORD:
+      passwd_start_line = current_line;
+      break;
+    }
+  }
+  fclose(file);
+  return passwd_start_line;
+}
+
+bool decrypt_password(const char *conf_file, const char *conf_name, const char *kdbx_file,
+    int passwd_start_line, char *decrypted_passwd, size_t buf_size) {
+  g_assert(decrypted_passwd != NULL && buf_size >= 8);
+
+  char decrypt_cmd[256];
+  snprintf(decrypt_cmd, sizeof(decrypt_cmd),
+      "tail '-n+%d' '%s' | systemd-creds '--name=%s' decrypt - -", passwd_start_line, conf_file,
+      conf_name);
+  FILE *pipe = popen(decrypt_cmd, "r");
+  if (!pipe) {
+    g_warning("Failed to run systemd-creds for decryption: %s", STR_ERROR);
+    return false;
+  }
+  size_t bytes_read = fread(decrypted_passwd, 1, buf_size, pipe);
+  pclose(pipe);
+  if (bytes_read == buf_size) {
+    g_warning("Password for '%s' exceeds %lu characters!", kdbx_file, buf_size - 1);
+    return false;
+  } else if (bytes_read == 0) {
+    g_warning("Failed to decrypt password using systemd-creds: %s", STR_ERROR);
+    return false;
+  }
+  decrypted_passwd[bytes_read] = '\0';
+  return true;
+}
+
+/// @brief Get the value of `DBUS_SESSION_BUS_ADDRESS` environment variable from the environment of
+///        the last process (where it is set) in the given list of process IDs.
+/// @param pids array of process IDs
+/// @param pids_len length of `pids` array
+/// @param ret_bus_address the result, if any, is stored in this variable and any previous value
+///                        pointed by this variable is `g_free()`d; this cannot be NULL
+static void get_last_session_bus_address(
+    const guint32 *pids, int pids_len, gchar **ret_bus_address) {
+  g_assert(ret_bus_address != NULL);
+
+  gchar *bus_address = NULL;
+  while (--pids_len >= 0) {
+    if ((bus_address = get_process_env_var(pids[pids_len], "DBUS_SESSION_BUS_ADDRESS")) != NULL) {
+      g_free(*ret_bus_address);
+      *ret_bus_address = bus_address;
+      return;
+    }
+  }
+}
+
+gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar *scope) {
+  if (!scope) return NULL;
+  // get the processes under this systemd scope unit, traverse them in reverse and return the first
+  // `DBUS_SESSION_BUS_ADDRESS` found
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
+      "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "GetUnitProcesses",
+      g_variant_new("(s)", scope), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
+  if (!result) {
+    g_warning(
+        "Failed to get processes for unit '%s': %s", scope, error ? error->message : "(null)");
+    return NULL;
+  }
+
+  g_autoptr(GVariantIter) iter = NULL;
+  g_variant_get(result, "(a(sus))", &iter);
+  // keep a buffer of PIDs, and if it becomes full then keep the last defined session bus address
+  // then start over in the buffer again
+  guint32 current_pid = 0, pids[64];
+  int pids_idx = 0;
+  gchar *bus_address = NULL;
+  while (g_variant_iter_next(iter, "(sus)", NULL, &current_pid, NULL)) {
+    if (pids_idx >= (int)(sizeof(pids) / sizeof(*pids))) {
+      get_last_session_bus_address(pids, pids_idx, &bus_address);
+      pids_idx = 0;
+    }
+    pids[pids_idx++] = current_pid;
+  }
+  get_last_session_bus_address(pids, pids_idx, &bus_address);
+  return bus_address;
 }

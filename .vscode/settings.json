@@ -19,6 +19,8 @@
         "tuple": "c",
         "type_traits": "c",
         "utility": "c",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "readline.h": "c",
+        "stat.h": "c"
     }
 }

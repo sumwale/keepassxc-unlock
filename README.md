@@ -92,9 +92,6 @@ individual files to help remember the passwords and key file paths.
 
 ## Installation
 
-The install script uses `git` to determine the version, so ensure it is installed.
-(e.g. `sudo apt install git` on Debian/Ubuntu, `sudo dnf install git` on Fedora/RHEL).
-
 Install the latest version using:
 
 ```sh
@@ -129,10 +126,10 @@ OR
 wget -qO- "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash /dev/stdin --build
 ```
 
-This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `openssl`.
+This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `readline`.
 As an example, for Debian/Ubuntu based systems, these dependencies can be installed with:
 `sudo apt install build-essential libglib2.0-dev libssl-dev` or on Fedora/RHEL based
-systems with: `sudo dnf install gcc make glib2-devel openssl-devel`.
+systems with: `sudo dnf install gcc make glib2-devel readline-devel`.
 
 To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
 

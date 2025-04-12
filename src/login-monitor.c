@@ -1,17 +1,16 @@
-#include <gio/gio.h>
-
 #include "common.h"
+
 
 /// @brief Callback for creation of a new session that checks if it is a valid target for auto-lock
 ///        and if so, then starts user-specific `keepassxc-unlock@<uid>.service` to handle the same.
-/// @param conn the `GBusConnection` object for the system D-Bus
+/// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param sender_name name of the sender of the event
 /// @param object_path path of the object for which the event was raised
 /// @param interface_name D-Bus interface of the raised signal
 /// @param signal_name name of the D-Bus signal that was raised (should be `SessionNew`)
 /// @param parameters parameters of the raised signal
 /// @param user_data custom user data sent through with the event which is ignored for this method
-static void handle_new_session(GDBusConnection *conn, const gchar *sender_name,
+static void handle_new_session(GDBusConnection *system_conn, const gchar *sender_name,
     const gchar *object_path, const gchar *interface_name, const gchar *signal_name,
     GVariant *parameters, gpointer user_data) {
   gchar *session_path = NULL;
@@ -21,7 +20,7 @@ static void handle_new_session(GDBusConnection *conn, const gchar *sender_name,
   // check if the session can be a target for auto-unlock and also get the owner
   g_message("Checking if session '%s' can be auto-unlocked and looking up its owner", session_path);
   guint32 user_id = 0;
-  if (!session_valid_for_unlock(conn, session_path, 0, &user_id, NULL, NULL, NULL)) {
+  if (!session_valid_for_unlock(system_conn, session_path, 0, &user_id, NULL, NULL, NULL)) {
     g_message("Ignoring session which is not a valid target for auto-unlock");
     return;
   }
@@ -41,8 +40,7 @@ static void handle_new_session(GDBusConnection *conn, const gchar *sender_name,
   snprintf(session_env, sizeof(session_env), "%s/%u/session.env", KP_CONFIG_DIR, user_id);
   FILE *session_env_fp = fopen(session_env, "w");
   if (!session_env_fp) {
-    g_critical(
-        "handle_new_session() failed to open '%s' for writing: %s", session_env, g_strerror(errno));
+    g_critical("handle_new_session() failed to open '%s' for writing: %s", session_env, STR_ERROR);
     return;
   }
   // this can write different session paths for the same user but it doesn't matter since subsequent
@@ -56,7 +54,7 @@ static void handle_new_session(GDBusConnection *conn, const gchar *sender_name,
   snprintf(service_name, sizeof(service_name), "keepassxc-unlock@%u.service", user_id);
   g_autoptr(GError) error = NULL;
   // get all properties of the session
-  g_autoptr(GVariant) result = g_dbus_connection_call_sync(conn, "org.freedesktop.systemd1",
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
       "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StartUnit",
       g_variant_new("(ss)", service_name, "replace"), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
       NULL, &error);
@@ -81,7 +79,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  g_print("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
+  g_message("Starting %s version %s", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
   g_autoptr(GDBusConnection) connection = dbus_connect(true, true);

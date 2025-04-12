@@ -8,13 +8,12 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-shell_scripts="keepassxc-unlock-setup.in version.sh"
 src_files="src/login-monitor.c src/unlock.c src/common.c src/common.h src/Makefile"
 service_files="systemd/keepassxc-login-monitor.service systemd/keepassxc-unlock@.service"
 doc_files="README.md LICENSE"
 git_site="https://github.com/sumwale/keepassxc-unlock"
 base_url="$git_site/blob/main"
-base_release_url="$git_site/releases/download"
+base_release_url="$git_site/releases/latest/download"
 # GPG key used for signing the release tarballs
 gpg_key_id=45AA1929F5181FA12E8DC3FBF6F955142B0ED1AC
 
@@ -51,18 +50,12 @@ trap "/bin/rm -rf $tmp_dir" 0 1 2 3 4 5 6 11 12 15
 
 echo -e "${fg_orange}Fetching executables and installing in /usr/local/sbin$fg_reset"
 sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || /bin/true
-for file in $shell_scripts; do
-  $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
-done
-product_version=$(bash $tmp_dir/version.sh --remote)
-rm -f $tmp_dir/version.sh
-for file in $tmp_dir/*.in; do
-  sed "s/@@PRODUCT_VERSION@@/$product_version/g" $file > ${file%.in}
-  chmod 0755 ${file%.in}
-  rm -f $file
-done
 if [ "$1" = "--build" ]; then
   echo -e "${fg_cyan}Building the latest git code from source...$fg_reset"
+  # first get version.sh
+  $get_cmd $tmp_dir/version.sh "$base_url/version.sh?raw=true"
+  product_version=$(bash $tmp_dir/version.sh --remote)
+  rm -f $tmp_dir/version.sh
   for file in $src_files; do
     $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
   done
@@ -72,10 +65,9 @@ if [ "$1" = "--build" ]; then
   done
 else
   # get the latest release tarball removing the commit ID from the product version
-  latest_version=$(uname -m)-$(echo $product_version | sed 's/+.*$//')
-  tarball=keepassxc-unlock-$latest_version.tar.xz
-  $get_cmd $tmp_dir/$tarball "$base_release_url/v$latest_version/$tarball"
-  $get_cmd $tmp_dir/$tarball.sig "$base_release_url/v$latest_version/$tarball.sig"
+  tarball=keepassxc-unlock-$(uname -m).tar.xz
+  $get_cmd $tmp_dir/$tarball "$base_release_url/$tarball"
+  $get_cmd $tmp_dir/$tarball.sig "$base_release_url/$tarball.sig"
   if ! gpg --verify --assert-signer $gpg_key_id $tmp_dir/$tarball.sig $tmp_dir/$tarball; then
     echo
     echo -e "${fg_orange}Signature verification failed for the package"
@@ -120,6 +112,28 @@ for file in $doc_files; do
 done
 sudo install -D -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root $tmp_dir/*
 rm -f $tmp_dir/*
+
+# upgrade obsolete configuration files after user confirmation
+old_confs=$(compgen -G /etc/keepassxc-unlock/*/*.conf)
+if [ -n "$old_confs" ]; then
+  for old_conf in $old_confs; do
+    if [[ $(basename $old_conf) != kdbx-*.conf ]]; then
+      echo -en "${fg_orange}Found obsolete configuration '$old_conf'.\nAuto upgrade? (y/N) $fg_reset"
+      set +e
+      read -r resp < /dev/tty
+      set -e
+      if [ "$resp" = y -o "$resp" = Y ]; then
+        if /usr/local/sbin/keepassxc-unlock-setup --upgrade $old_conf; then
+          rm -f $old_conf
+          echo -e "${fg_orange}Upgraded and removed old configuration '$old_conf'$fg_reset"
+        else
+          echo -e "${fg_orange}\nFailed to auto-upgrade the old configuration '$old_conf'."
+          echo -e "Please remove it manually and register using keepassxc-unlock-setup.$fg_reset"
+        fi
+      fi
+    fi
+  done
+fi
 
 echo
 echo -e "${fg_orange}Start user-specific auto-unlock service? This will only work if"

@@ -1,13 +1,10 @@
+#include "common.h"
+
 #include <fcntl.h>
 #include <glib.h>
 #include <glob.h>
 #include <pwd.h>
 #include <sys/types.h>
-
-#include "common.h"
-
-#define MAX_PASSWORD_SIZE 4096    // maximum allowed size of decrypted password plus one for null
-#define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
 
 
 /// @brief Holds information of the session being monitored and passed to the `user_data` parameter
@@ -21,7 +18,7 @@ typedef struct {
   const gchar *display;         // the `Display` property of the session
   bool session_locked;          // holds the previous locked state of the session
   bool session_active;          // holds the previous active state of the session
-  guint kp_subscription_id;     // the subscription ID of KeePassXC `NameOwnerChanged` signals
+  int kp_subscription_id;       // the subscription ID of KeePassXC `NameOwnerChanged` signals
 } MonitoredSession;
 
 
@@ -56,93 +53,6 @@ static bool is_locked(GDBusConnection *system_conn, const char *session_path) {
   g_autoptr(GVariant) locked_variant = NULL;
   g_variant_get(result, "(v)", &locked_variant);
   return g_variant_get_boolean(locked_variant);
-}
-
-/// @brief Change the effective user ID to the given one with error checking.
-///        Exit the whole program with code 1 if it fails to change effective UID back to 0.
-/// @param uid the user ID to be set as the effective UID
-static void change_euid(uid_t uid) {
-  if (geteuid() == uid) return;
-  if (seteuid(uid) != 0) {
-    g_critical("change_euid() failed in seteuid to %u: %s", uid, g_strerror(errno));
-    if (uid == 0) {    // failed to switch back to root?
-      g_error("Cannot switch back to root, terminating...");
-      exit(1);
-    }
-  }
-}
-
-/// @brief Connect to the user's session D-Bus while switching effective user ID. Optionally display
-///        error on `stderr` if there was a connection failure.
-/// @param user_id the numeric ID of the user to switch the effective user ID for session connect to
-///                be successful; the effective user ID will be switched back to root at the end
-/// @param log_error if `true` then log connection error to `stderr`
-/// @return an instance of `GDBusConnection*` that may be shared among callers and must be released
-///         using `g_object_unref()`/`g_autoptr()`, or NULL if the connection was unsuccessful
-static GDBusConnection *dbus_session_connect(uid_t user_id, bool log_error) {
-  // switch effective ID to the user before connecting since this is the user's session bus
-  change_euid(user_id);
-  GDBusConnection *session_conn = dbus_connect(false, log_error);
-  change_euid(0);
-  return session_conn;
-}
-
-/// @brief Get the process ID registered for given D-Bus API on the session bus.
-///        Since this uses the session bus, the call should be done after changing
-///        the effective UID of this process to the target user.
-/// @param session_conn the `GBusConnection` object for the user's session D-Bus
-/// @param dbus_api the D-Bus API that the process has registered
-/// @return the process ID registered for the D-Bus API or 0 if something went wrong
-static guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const char *dbus_api) {
-  g_autoptr(GError) error = NULL;
-  g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.DBus",
-      "/", DBUS_MAIN_OBJECT_NAME, "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api),
-      NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
-  if (result) {
-    guint32 pid = 0;
-    g_variant_get(result, "(u)", &pid);
-    return pid;
-  } else {
-    return 0;
-  }
-}
-
-// This implementation of SHA-512 calculation is 2-2.5X slower than OpenSSL's implementation
-// but the overall time is still minuscule for a small file like keepassxc executable and it
-// avoids having to add OpenSSL dependency.
-
-/// @brief Calculate the SHA-512 hash for the given file and return as a hexadecimal string.
-/// @param path path of the file for which SHA-512 hash has to be calculated
-/// @return SHA-512 hash as a hexadecimal string which should be free'd with `g_free()` after use,
-/// or NULL on failure
-gchar *sha512sum(const char *path) {
-  // create a new checksum context for SHA-512
-  g_autoptr(GChecksum) checksum = g_checksum_new(G_CHECKSUM_SHA512);
-  if (!checksum) {
-    g_printerr("sha512sum() failed to create checksum context\n");
-    return NULL;
-  }
-
-  // open the file using low-level `open()` API for best performance
-  int fd = open(path, O_RDONLY);
-  if (fd == -1) {
-    perror("sha512sum() failed to open file");
-    return NULL;
-  }
-
-  // read data from the file in chunks and keep updating the checksum
-  unsigned char buffer[32768];
-  ssize_t bytes_read;
-  while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0) {
-    g_checksum_update(checksum, buffer, bytes_read);
-  }
-  if (bytes_read == -1) perror("sha512sum() failed to read file");
-  close(fd);
-  if (bytes_read == -1) return NULL;
-
-  // get the final checksum as a hexadecimal string
-  const gchar *hex_hash = g_checksum_get_string(checksum);
-  return g_strdup(hex_hash);
 }
 
 /// @brief Send a notification to the desktop using the D-Bus `org.freedesktop.Notifications` API
@@ -210,7 +120,7 @@ static bool verify_process_exe_sha512(
   }
   snprintf(kp_exe, sizeof(kp_exe), "/proc/%u/exe", kp_pid);
   g_autofree const gchar *current_sha512 = sha512sum(kp_exe);
-  // use `fgets` to read the sha512 file which is expected to have only one line
+  // use `fgets()` to read the sha512 file which is expected to have only one line
   // and replace terminating newline using `strcspn` (which works even if there was no newline)
   bool mismatch = !current_sha512 || !fgets(expected_sha512, sizeof(expected_sha512), file) ||
                   (expected_sha512[strcspn(expected_sha512, "\n")] = '\0',
@@ -299,41 +209,16 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
   if (!verify_process_exe_sha512(session_conn, user_conf_dir, kp_pid)) return false;
 
   char conf_pattern[128], decrypted_passwd[MAX_PASSWORD_SIZE];
-  snprintf(conf_pattern, sizeof(conf_pattern), "%s/*.conf", user_conf_dir);
+  snprintf(conf_pattern, sizeof(conf_pattern), "%s/" KP_CONFIG_PREFIX "*.conf", user_conf_dir);
   glob_t globbuf;
   if (glob(conf_pattern, 0, NULL, &globbuf) == 0) {
     // clear decrypted_passwd in every loop even if the loop condition fails
     for (size_t i = 0; memset(decrypted_passwd, 0, MAX_PASSWORD_SIZE), i < globbuf.gl_pathc; i++) {
       char *conf_path = globbuf.gl_pathv[i];
-      FILE *file = fopen(conf_path, "r");
-      if (!file) {
-        g_warning("Failed to open configuration file: %s", conf_path);
-        continue;
-      }
-
-      char line[PATH_MAX + 4];
-      gchar *kdbx_file = "";    // this is passed over to the callback which does the `g_free()`
-      char key_file[PATH_MAX + 4] = {0};
-      int passwd_start_line = 0;
-      while (fgets(line, sizeof(line), file)) {
-        passwd_start_line++;
-        if (strncmp(line, "DB=", 3) == 0) {
-          kdbx_file = g_strdup(line + 3);
-          kdbx_file[strcspn(kdbx_file, "\n")] = '\0';
-        } else if (strncmp(line, "KEY=", 4) == 0) {
-          strncpy(key_file, line + 4, sizeof(key_file) - 1);
-          key_file[strcspn(key_file, "\n")] = '\0';
-        } else if (strncmp(line, "PASSWORD:", 9) != 0) {
-          // password starts after the line having PASSWORD:
-          break;
-        }
-      }
-      fclose(file);
-
-      if (*kdbx_file == '\0') {
-        g_warning("Skipping invalid KDBX unlock configuration file '%s'", conf_path);
-        continue;
-      }
+      g_autofree gchar *kdbx_file = NULL;
+      g_autofree gchar *key_file = NULL;
+      int passwd_start_line = read_configuration_file(conf_path, &kdbx_file, &key_file);
+      if (passwd_start_line == -1) continue;
 
       // check for session end before unlocking
       if (check_main_loop && !g_main_loop_is_running(session_data->loop)) {
@@ -341,27 +226,18 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
         break;
       }
 
-      char conf_name[128] = {0}, decrypt_cmd[256];
-      char *conf_name_p, *conf_filename = strrchr(conf_path, '/');
-      if (conf_filename && (conf_name_p = strstr(conf_filename + 1, ".conf")) != NULL) {
-        size_t conf_name_len = conf_name_p - conf_filename - 1;
-        strncpy(conf_name, conf_filename + 1, MIN(conf_name_len, sizeof(conf_name)));
+      char conf_name[128];
+      const char *conf_filename = strrchr(conf_path, '/'), *conf_name_p;
+      if (conf_filename && (conf_filename += sizeof(KP_CONFIG_PREFIX),    // sizeof() also adds +1
+                               conf_name_p = strstr(conf_filename, ".conf")) != NULL) {
+        size_t conf_name_len = MIN((size_t)(conf_name_p - conf_filename), sizeof(conf_name) - 1);
+        memcpy(conf_name, conf_filename, conf_name_len);
+        conf_name[conf_name_len] = '\0';
       }
-      snprintf(decrypt_cmd, sizeof(decrypt_cmd),
-          "tail '-n+%d' '%s' | systemd-creds '--name=%s' decrypt - -", passwd_start_line, conf_path,
-          conf_name);
-      FILE *pipe = popen(decrypt_cmd, "r");
-      if (!pipe) {
-        perror("Failed to run systemd-creds for decryption");
+      if (!decrypt_password(conf_path, conf_name, kdbx_file, passwd_start_line, decrypted_passwd,
+              MAX_PASSWORD_SIZE)) {
         continue;
       }
-      size_t bytes_read = fread(decrypted_passwd, 1, MAX_PASSWORD_SIZE, pipe);
-      pclose(pipe);
-      if (bytes_read == MAX_PASSWORD_SIZE) {
-        g_warning("Password for '%s' exceeds %u characters!", kdbx_file, MAX_PASSWORD_SIZE - 1);
-        continue;
-      }
-      decrypted_passwd[bytes_read] = '\0';
 
       // last minute check to skip unlock if LockedHint is true
       if (is_locked(system_conn, session_data->session_path)) {
@@ -371,7 +247,8 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
 
       g_dbus_connection_call(session_conn, KP_DBUS_INTERFACE, "/keepassxc", KP_DBUS_INTERFACE,
           "openDatabase", g_variant_new("(sss)", kdbx_file, decrypted_passwd, key_file), NULL,
-          G_DBUS_CALL_FLAGS_NONE, -1, NULL, (GAsyncReadyCallback)on_database_unlock, kdbx_file);
+          G_DBUS_CALL_FLAGS_NONE, -1, NULL, (GAsyncReadyCallback)on_database_unlock,
+          g_strdup(kdbx_file) /* callback should have its own copy */);
     }
   }
   memset(decrypted_passwd, 0, MAX_PASSWORD_SIZE);
@@ -446,70 +323,11 @@ static void handle_keepassxc_start(GDBusConnection *session_conn, const char *se
     // unsubscribe to this signal here on (so if user closes and start KeePassXC again, then it
     // won't be auto-unlocked by design, though it will still have if session goes from
     // lock->unlock or inactive->active)
-    guint kp_subscription_id = g_atomic_int_exchange(&session_data->kp_subscription_id, 0);
+    int kp_subscription_id = g_atomic_int_exchange(&session_data->kp_subscription_id, 0);
     if (kp_subscription_id != 0) {
-      g_dbus_connection_signal_unsubscribe(session_conn, kp_subscription_id);
+      g_dbus_connection_signal_unsubscribe(session_conn, (guint)kp_subscription_id);
     }
   }
-}
-
-/// @brief Get the value of `DBUS_SESSION_BUS_ADDRESS` environment variable from the environment of
-///        the last process (where it is set) in the given list of process IDs.
-/// @param pids array of process IDs
-/// @param pids_len length of `pids` array
-/// @param ret_bus_address the result, if any, is stored in this variable and any previous value
-///                        pointed by this variable is `g_free()`d; this cannot be NULL
-static void get_last_session_bus_address(
-    const guint32 *pids, int pids_len, gchar **ret_bus_address) {
-  g_assert(ret_bus_address != NULL);
-
-  gchar *bus_address = NULL;
-  while (--pids_len >= 0) {
-    if ((bus_address = get_process_env_var(pids[pids_len], "DBUS_SESSION_BUS_ADDRESS")) != NULL) {
-      g_free(*ret_bus_address);
-      *ret_bus_address = bus_address;
-      return;
-    }
-  }
-}
-
-/// @brief Get the value of `DBUS_SESSION_BUS_ADDRESS` environment variable from the environment of
-///        the processes belonging to the given `Scope`. The value from the last process in the list
-///        having the variable set is used.
-/// @param system_conn the `GBusConnection` object for the system D-Bus
-/// @param scope the `Scope` where the `DBUS_SESSION_BUS_ADDRESS` has to be searched
-/// @return the value of the `DBUS_SESSION_BUS_ADDRESS` environment variable from the last process
-///         in the given scope, or NULL if no process has a setting for the variable
-static gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar *scope) {
-  if (!scope) return NULL;
-  // get the processes under this systemd scope unit, traverse them in reverse and return the first
-  // `DBUS_SESSION_BUS_ADDRESS` found
-  g_autoptr(GError) error = NULL;
-  g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
-      "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "GetUnitProcesses",
-      g_variant_new("(s)", scope), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
-  if (!result) {
-    g_warning(
-        "Failed to get processes for unit '%s': %s", scope, error ? error->message : "(null)");
-    return NULL;
-  }
-
-  g_autoptr(GVariantIter) iter = NULL;
-  g_variant_get(result, "(a(sus))", &iter);
-  // keep a buffer of PIDs, and if it becomes full then keep the last defined session bus address
-  // then start over in the buffer again
-  guint32 current_pid = 0, pids[64];
-  int pids_idx = 0;
-  gchar *bus_address = NULL;
-  while (g_variant_iter_next(iter, "(sus)", NULL, &current_pid, NULL)) {
-    if (pids_idx >= (int)(sizeof(pids) / sizeof(*pids))) {
-      get_last_session_bus_address(pids, pids_idx, &bus_address);
-      pids_idx = 0;
-    }
-    pids[pids_idx++] = current_pid;
-  }
-  get_last_session_bus_address(pids, pids_idx, &bus_address);
-  return bus_address;
 }
 
 
@@ -530,7 +348,7 @@ int main(int argc, char *argv[]) {
   // check if the first argument has a valid numeric user ID
   struct passwd *pwd = NULL;
   char *user_end = NULL;
-  uid_t user_id = strtoul(argv[1], &user_end, 10);
+  uid_t user_id = (uid_t)strtoul(argv[1], &user_end, 10);
   if (argv[1][0] != '\0' && *user_end == '\0') pwd = getpwuid(user_id);
   if (!pwd) {
     g_printerr("Invalid user ID %s\n", argv[1]);
@@ -546,35 +364,39 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  g_print("Starting %s version %s\n", argv[0], PRODUCT_VERSION);
+  g_message("Starting %s version %s", argv[0], PRODUCT_VERSION);
 
   // connect to the system bus
   g_autoptr(GDBusConnection) system_conn = dbus_connect(true, true);
   if (!system_conn) return 1;
 
-  // get the session `Type` and `Display` properties
+  // get the session `Type`, `Display` and `Scope` properties
   g_autofree gchar *display = NULL;
   g_autofree gchar *scope = NULL;
   bool is_wayland = false;
   if (!session_valid_for_unlock(
           system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope)) {
     g_warning(
-        "No valid X11/Wayland session found for UID=%u sessionPath='%s'", user_id, session_path);
+        "No valid X11/Wayland session found for UID=%u in sessionPath='%s'", user_id, session_path);
     return 0;
   }
 
   // point `DBUS_SESSION_BUS_ADDRESS` to the user's session dbus
-  g_autofree gchar *dbus_address = get_session_bus_address(system_conn, scope);
-  // fallback to default if `DBUS_SESSION_BUS_ADDRESS` is not set for any process of this session
-  // (note that keepassxc will likely not belong to this session, since in systemd-logind setups
-  //    user's session systemd daemon is root for most processes which detaches from session)
-  if (!dbus_address) {
-    g_warning("Failed to find DBUS_SESSION_BUS_ADDRESS in the environment of any of the processes "
-              "belonging to the scope '%s' of this session. Failling back to the default value.",
-        scope);
-    dbus_address = g_strdup_printf("unix:path=/run/user/%u/bus", user_id);
+  g_autofree const gchar *session_dbus_address = NULL;
+  for (int i = 0; i < MAX_TRIES; i++) {
+    if ((session_dbus_address = get_session_bus_address(system_conn, scope)) != NULL) break;
+    sleep(1);
   }
-  setenv("DBUS_SESSION_BUS_ADDRESS", dbus_address, 1);
+  // fallback to default if `DBUS_SESSION_BUS_ADDRESS` is not set for any process of this session
+  // (note that keepassxc will likely not "belong" to this session, since in systemd-logind setups
+  //    user's session systemd daemon is root for most processes which detaches from session)
+  if (!session_dbus_address) {
+    g_warning("Failed to find DBUS_SESSION_BUS_ADDRESS in the environment of any of the processes "
+              "belonging to the scope '%s' of this session. Falling back to the default value.",
+        scope);
+    session_dbus_address = g_strdup_printf("unix:path=/run/user/%u/bus", user_id);
+  }
+  setenv("DBUS_SESSION_BUS_ADDRESS", session_dbus_address, 1);
 
   // start monitoring the session
   g_message("Monitoring session %s for UID=%u", session_path, user_id);
@@ -618,7 +440,7 @@ int main(int argc, char *argv[]) {
           DBUS_MAIN_OBJECT_NAME, DBUS_MAIN_OBJECT_NAME, "NameOwnerChanged", "/org/freedesktop/DBus",
           NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_keepassxc_start, &user_data, NULL);
       if (kp_subscription_id != 0) {
-        g_atomic_int_set(&user_data.kp_subscription_id, kp_subscription_id);
+        g_atomic_int_set(&user_data.kp_subscription_id, (int)kp_subscription_id);
         g_message("No KeePassXC running or failed to connect, monitoring KeePassXC start");
       }
     }
@@ -628,9 +450,9 @@ int main(int argc, char *argv[]) {
   g_main_loop_run(loop);
 
   // unsubscribe
-  guint kp_subscription_id = g_atomic_int_exchange(&user_data.kp_subscription_id, 0);
+  int kp_subscription_id = g_atomic_int_exchange(&user_data.kp_subscription_id, 0);
   if (kp_subscription_id != 0 && session_conn) {
-    g_dbus_connection_signal_unsubscribe(session_conn, kp_subscription_id);
+    g_dbus_connection_signal_unsubscribe(session_conn, (guint)kp_subscription_id);
   }
   g_dbus_connection_signal_unsubscribe(system_conn, login_subscription_id);
   g_dbus_connection_signal_unsubscribe(system_conn, session_subscription_id);
