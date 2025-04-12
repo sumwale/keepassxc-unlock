@@ -95,9 +95,12 @@ else
     fi
   done
 fi
-chmod 0755 $tmp_dir/*
-sudo cp -d --preserve=mode,timestamps $tmp_dir/* /usr/local/sbin/
-rm -f $tmp_dir/*
+for p in $tmp_dir/*; do
+  chmod 0755 $p
+  sudo rm -f /usr/local/sbin/`basename $p`
+  sudo cp -d --preserve=mode,timestamps $p /usr/local/sbin/
+  rm -f $p
+done
 
 echo -e "${fg_orange}Fetching systemd service file and installing in /etc/systemd/system$fg_reset"
 for file in $service_files; do
