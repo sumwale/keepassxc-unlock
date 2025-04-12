@@ -353,6 +353,7 @@ int main_setup(int argc, char *argv[]) {
   const char *key_type = "host+tpm2";
   g_print("Checking TPM2 support\n\n");
   int exit_code = system("systemd-creds has-tpm2");
+  g_print("\n");
   if (exit_code == 127) {    // shell could not find the command
     g_printerr("systemd-creds absent: minimum version of systemd required is 250\n");
     return 1;
