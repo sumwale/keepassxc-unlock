@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include <ctype.h>
 #include <pwd.h>
 #include <readline/readline.h>
 #include <sys/stat.h>
@@ -197,7 +198,7 @@ static gchar *verify_and_compute_checksum(
     fflush(stdout);
     g_autofree char *response = NULL;
     size_t sz = 0;
-    if (getline(&response, &sz, stdin) != 2 || g_ascii_strcasecmp(response, "y\n") != 0) {
+    if (getline(&response, &sz, stdin) < 2 || tolower(*response) != 'y') {
       g_printerr("Some error with the given parameters, please register again\n");
       return NULL;
     }
@@ -366,9 +367,7 @@ int main_setup(int argc, char *argv[]) {
     fflush(stdout);
     g_autofree char *response = NULL;
     size_t sz = 0;
-    if (getline(&response, &sz, stdin) != 2 || g_ascii_strcasecmp(response, "y\n") != 0) {
-      return 0;
-    }
+    if (getline(&response, &sz, stdin) < 2 || tolower(*response) != 'y') { return 0; }
     key_type = "host";
   }
 
@@ -406,7 +405,7 @@ int main_setup(int argc, char *argv[]) {
     fflush(stdout);
     g_autofree char *response = NULL;
     size_t sz = 0;
-    if (getline(&response, &sz, stdin) != 2 || g_ascii_strcasecmp(response, "y\n") != 0) {
+    if (getline(&response, &sz, stdin) < 2 || tolower(*response) != 'y') {
       // continue and update the SHA-512 of the executable, so read the existing values
       g_autofree gchar *recorded_kdbx_file = NULL;
       int passwd_start_line = read_configuration_file(conf_file, &recorded_kdbx_file, &key_file);

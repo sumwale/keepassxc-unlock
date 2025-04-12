@@ -96,8 +96,9 @@ bool session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session
       bool is_wayland = g_strcmp0(type_val, "wayland") == 0;
       has_supported_type = is_wayland || g_strcmp0(type_val, "x11") == 0;
       if (has_supported_type && is_wayland_ptr) *is_wayland_ptr = is_wayland;
-    } else if (g_strcmp0(key, "Active") == 0) {
-      is_active = g_variant_get_boolean(value);
+    } else if (g_strcmp0(key, "State") == 0) {
+      const char *state = g_variant_get_string(value, NULL);
+      is_active = g_strcmp0(state, "active") || g_strcmp0(state, "opening");
     }
   }
 
