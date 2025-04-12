@@ -3,9 +3,16 @@ SHELL = /bin/sh
 CC = gcc
 # CFLAGS and LDFLAGS from:
 # https://best.openssf.org/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C++.html
-CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -Wformat -Wformat=2 -Wconversion \
-	 -Wimplicit-fallthrough -Werror=format-security -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 \
-	 -pie -fPIE -fstrict-flex-arrays=3 -fstack-clash-protection -fstack-protector-strong
+BASE_CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wformat -Wformat=2 -Wconversion \
+	      -Wimplicit-fallthrough -Werror=format-security -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 \
+	      -pie -fPIE -fstrict-flex-arrays=3 -fstack-clash-protection -fstack-protector-strong
+SANITIZE =
+ifeq ($(SANITIZE),)
+  CFLAGS = -O2 $(BASE_CFLAGS)
+else
+  CFLAGS = -fsanitize=address -g3 $(BASE_CFLAGS)
+endif
+
 DEFINES = -DPRODUCT_VERSION=\"$(PRODUCT_VERSION)\"
 INCLUDES := $(shell pkg-config --cflags glib-2.0 gio-2.0 readline)
 LDFLAGS = -Wl,-z,nodlopen -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now \
