@@ -22,7 +22,7 @@ typedef struct {
 } MonitoredSession;
 
 
-/// @brief Show usage of this program
+/// @brief Show usage of this program.
 /// @param script_name name of the invoking script as obtained from `argv[0]`
 static void show_usage(const char *script_name) {
   g_print("\nUsage: %s [--version] <USER_ID> <SESSION_PATH>\n", script_name);
@@ -34,7 +34,7 @@ static void show_usage(const char *script_name) {
   g_print("  <SESSION_PATH>  the path of the session (ex. /org/freedesktop/login1/session/_3)\n\n");
 }
 
-/// @brief Check if given session is locked (i.e. `LockedHint` is true)
+/// @brief Check if given session is locked (i.e. `LockedHint` is true).
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param session_path path of the selected session
 /// @return boolean `LockedHint` property of the session
@@ -256,7 +256,7 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
   return true;
 }
 
-/// @brief Callback to handle session signals on `org.freedesktop.login1` for selected session
+/// @brief Callback to handle session signals on `org.freedesktop.login1` for selected session.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param sender_name name of the sender of the signal
 /// @param object_path path of the object for which the signal was raised
@@ -292,7 +292,7 @@ static void handle_session_event(GDBusConnection *system_conn, const char *sende
   }
 }
 
-/// @brief Callback to handle session close for the selected session
+/// @brief Callback to handle session close for the selected session.
 static void handle_session_close(GDBusConnection *system_conn, const char *sender_name,
     const char *object_path, const char *interface_name, const char *signal_name,
     GVariant *parameters, gpointer user_data) {
@@ -305,7 +305,7 @@ static void handle_session_close(GDBusConnection *system_conn, const char *sende
   }
 }
 
-/// @brief Callback to handle KeePassXC startup when it was not present at the start of this process
+/// @brief Callback to handle KeePassXC startup when not present at the start of this process.
 static void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_name,
     const char *object_path, const char *interface_name, const char *signal_name,
     GVariant *parameters, gpointer user_data) {

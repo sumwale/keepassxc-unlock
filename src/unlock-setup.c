@@ -6,7 +6,7 @@
 #include <termios.h>
 
 
-/// @brief Show usage of this program
+/// @brief Show usage of this program.
 /// @param script_name name of the invoking script as obtained from `argv[0]`
 static void show_usage(const char *script_name) {
   g_print("\nUsage: %s [--version] <USER> <KDBX>\n", script_name);
@@ -17,6 +17,11 @@ static void show_usage(const char *script_name) {
   g_print("  <KDBX>          path to the KDBX database (can be relative or absolute)\n\n");
 }
 
+/// @brief Prompt and read password from standard input without echo.
+/// @param passwd input buffer which will be filled in with the password entered; should be a static
+///               buffer of size `MAX_PASSWORD_SIZE + 1`
+/// @param prompt the prompt to be displayed when asking for the password
+/// @return `true` if the password was succesfully obtained, `false` otherwise
 static bool get_password(char passwd[MAX_PASSWORD_SIZE + 1], const gchar *prompt) {
   struct termios old_term, new_term;
   g_print("%s", prompt);
@@ -44,6 +49,11 @@ static bool get_password(char passwd[MAX_PASSWORD_SIZE + 1], const gchar *prompt
   return true;
 }
 
+/// @brief Prompt user to enter the password without echo, with repeat entry for confirmation.
+///        Repeats `MAX_TRIES` times until successful.
+/// @param passwd input buffer which will be filled in with the password entered; should be a static
+///               buffer of size `MAX_PASSWORD_SIZE + 1`
+/// @return `true` if the password was succesfully obtained, `false` otherwise
 static bool read_password(char passwd[MAX_PASSWORD_SIZE + 1]) {
   char passwd2[MAX_PASSWORD_SIZE + 1];
   for (int i = 0; i < MAX_TRIES; i++) {
@@ -87,6 +97,7 @@ static char *read_key_file_path() {
   return NULL;
 }
 
+/// @brief Wait for the user to press the <Enter> key ignoring any prior input prior.
 static void wait_for_enter() {
   fflush(stdout);
   g_autofree char *dummy = NULL;
@@ -95,6 +106,15 @@ static void wait_for_enter() {
   g_print("\n");
 }
 
+/// @brief Search for the session D-Bus, communicate with KeePassXC process on the bus, then try
+///        unlocking the database with given password and key file, and record the SHA-512 checksum
+///        of the keepassxc process after user confirmation.
+/// @param user_id the numeric ID of the user
+/// @param kdbx_file path of the KDBX database file
+/// @param password the password (in plain-text) to unlock the database
+/// @param key_file path of the key file required to unlock the database, can be empty
+/// @return the SHA-512 hash of the keepassxc executable verified by the user as being the correct
+///         one, or NULL on error; must be released with `g_free()` after use
 static gchar *verify_and_compute_checksum(
     uid_t user_id, const char *kdbx_file, const char *password, const char *key_file) {
   // determine the `DBUS_SESSION_BUS_ADDRESS` by searching process environments in user sessions
@@ -105,7 +125,7 @@ static gchar *verify_and_compute_checksum(
       G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
   if (!result) {
     g_printerr("Failed to list sessions: %s\n", error ? error->message : "(null)");
-    return false;
+    return NULL;
   }
 
   g_autofree gchar *session_dbus_address = NULL;
@@ -190,7 +210,7 @@ static gchar *verify_and_compute_checksum(
 }
 
 /// @brief Encrypt the password using systemd-creds and append it to the configuration file.
-/// @param password the password to encrypt
+/// @param password the password (in plain-text) to encrypt
 /// @param conf_file the configuration file to which the encrypted password will be appended
 /// @param conf_name the configuration name
 /// @param key_type the key type for encryption
@@ -218,6 +238,15 @@ static bool append_encrypted_password(
   return !failed;
 }
 
+/// @brief Write a new configuration file, or overwrite existing one with given parameters.
+/// @param conf_file path of the configuration file
+/// @param conf_name name of the configuration, usually the base name of `conf_file`
+///                  without prefix and suffix
+/// @param kdbx_file path of the KDBX database file
+/// @param key_file path of the key file required to unlock the database, can be empty
+/// @param password the password (in plain-text) to unlock the database
+/// @param key_type type of the key to use for encryption, one of "host" or "host+tpm2"
+/// @return `true` if the configuration file was successfully written, `false` otherwise
 static bool write_configuration_file(const char *conf_file, const char *conf_name,
     const char *kdbx_file, const char *key_file, const char *password, const char *key_type) {
   FILE *conf_fp = fopen(conf_file, "w");
@@ -241,6 +270,9 @@ static bool write_configuration_file(const char *conf_file, const char *conf_nam
   return true;
 }
 
+/// @brief Temporary code for upgrading pre 0.9.6 configuration files.
+/// @param old_conf_file path to the old configuration file
+/// @return exit code for the upgrade process
 static int handle_pre096_upgrade(const char *old_conf_file) {
   g_autofree const char *old_conf_path = realpath(old_conf_file, NULL);
   g_autofree gchar *kdbx_file = NULL;

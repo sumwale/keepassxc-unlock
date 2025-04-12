@@ -103,7 +103,7 @@ extern guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const 
 ///        still minuscule for a small file like keepassxc executable and it avoids having to add
 ///        an OpenSSL dependency just for SHA-512 checksum.
 /// @param path path of the file for which SHA-512 hash has to be calculated
-/// @return SHA-512 hash as a hexadecimal string which should be free'd with `g_free()` after use,
+/// @return SHA-512 hash as a hexadecimal string which should be released with `g_free()` after use,
 ///         or NULL on failure
 extern gchar *sha512sum(const char *path);
 
@@ -124,7 +124,7 @@ extern int read_configuration_file(const char *conf_file, gchar **kdbx_file, gch
 /// @param conf_file the configuration file for a KDBX database
 /// @param conf_name name of the configuration used for encryption (usually the name of file without
 ///                  the `.conf` suffix and `kdbx-` suffix)
-/// @param kdbx_file the path of the KDBX database file
+/// @param kdbx_file path of the KDBX database file
 /// @param passwd_start_line line number in the KDBX database file where the password starts
 ///                          (normally the result of a previous `read_configuration_file()` call)
 /// @param decrypted_passwd buffer that will hold the decrypted password; cannot be NULL
