@@ -23,7 +23,9 @@ INSTALL_BIN_DIR = /usr/local/sbin
 
 TARGET_NAMES = keepassxc-login-monitor keepassxc-unlock keepassxc-unlock-setup
 TARGETS := $(patsubst %,$(BUILD_DIR)/%,$(TARGET_NAMES))
+TARGET_OBJS := $(patsubst keepassxc-%,$(BUILD_DIR)/%.o,$(TARGET_NAMES))
 ARCH := $(shell uname -m)
+MULTICALL_STATIC = $(BUILD_DIR)/keepassxc-unlock-all-$(ARCH)-static
 TARGETS_STATIC := $(patsubst %,%-$(ARCH)-static,$(TARGETS))
 PLATFORMS = linux/$(ARCH)
 STATIC_LIBS =
@@ -32,17 +34,23 @@ STATIC_LIBS =
 
 all: $(TARGETS)
 
-all-static: $(TARGETS_STATIC)
+all-static: $(MULTICALL_STATIC) $(TARGETS_STATIC)
 
 $(BUILD_DIR)/%.o: %.c common.h
 	mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -c -o $@ $<
 
-$(TARGETS): $(BUILD_DIR)/keepassxc-%: $(BUILD_DIR)/%.o $(BUILD_DIR)/common.o
+$(TARGETS): $(BUILD_DIR)/keepassxc-%: $(BUILD_DIR)/%.o $(BUILD_DIR)/%-call.o $(BUILD_DIR)/common.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-$(TARGETS_STATIC): $(BUILD_DIR)/keepassxc-%-$(ARCH)-static: $(BUILD_DIR)/%.o $(BUILD_DIR)/common.o
+$(MULTICALL_STATIC): $(TARGET_OBJS) $(BUILD_DIR)/common.o $(BUILD_DIR)/multicall.o
 	$(CC) -static $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) $(STATIC_LIBS)
+
+$(TARGETS_STATIC): $(MULTICALL_STATIC)
+	for target in $(TARGETS_STATIC); do \
+		rm -f $${target}; \
+		ln -s `basename $(MULTICALL_STATIC)` $${target}; \
+	done
 
 all-static-musl:
 	mkdir -p $(BUILD_DIR)

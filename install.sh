@@ -86,10 +86,17 @@ else
   rm -f $tmp_dir/$tarball $tmp_dir/$tarball.sig
   static_suffix="-$(uname -m)-static"
   for file in $tmp_dir/*$static_suffix; do
-    mv $file $(echo $file | sed 's/'$static_suffix'$//')
+    if [ -L $file ]; then
+      target=$(readlink $file)
+      rm -f $file
+      ln -s ${target%$static_suffix} ${file%$static_suffix}
+    else
+      mv $file ${file%$static_suffix}
+    fi
   done
 fi
-sudo install -t /usr/local/sbin -m 0755 -o root -g root $tmp_dir/*
+chmod 0755 $tmp_dir/*
+sudo cp -d --preserve=mode,timestamps $tmp_dir/* /usr/local/sbin/
 rm -f $tmp_dir/*
 
 echo -e "${fg_orange}Fetching systemd service file and installing in /etc/systemd/system$fg_reset"

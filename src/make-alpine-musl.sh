@@ -9,5 +9,5 @@ apk cache purge
 build_dir=../build
 cd /keepassxc-unlock/src
 make all-static BUILD_DIR=$build_dir PRODUCT_VERSION="$1" STATIC_LIBS="-ltinfo -lpcre2-8 -lffi -lz -lintl -lmount -lblkid -leconf"
-strip -g $build_dir/*-`uname -m`-static
-chown --reference unlock.c $build_dir/*-static
+strip -g $build_dir/*-all-`uname -m`-static
+chown --no-dereference --reference unlock.c $build_dir/*-static
