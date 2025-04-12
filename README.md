@@ -93,7 +93,7 @@ individual files to help remember the passwords and key file paths.
 
 ## Installation
 
-Install the latest version using:
+Install the latest release version using:
 
 ```sh
 curl -fsSL "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash
@@ -115,7 +115,8 @@ page that are fetched by the install script are signed with a GnuPG key that is 
 before installation.
 
 If you prefer building the binaries from source, then a dynamically linked version can be
-built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above:
+built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above.
+This will install the latest version from the git repository:
 
 ```sh
 curl -fsSL "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash /dev/stdin --build
