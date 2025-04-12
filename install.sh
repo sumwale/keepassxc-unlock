@@ -114,7 +114,7 @@ sudo install -D -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root
 rm -f $tmp_dir/*
 
 # upgrade obsolete configuration files after user confirmation
-old_confs=$(compgen -G /etc/keepassxc-unlock/*/*.conf)
+old_confs=$(sudo bash -c 'compgen -G /etc/keepassxc-unlock/*/*.conf' || /bin/true)
 if [ -n "$old_confs" ]; then
   for old_conf in $old_confs; do
     if [[ $(basename $old_conf) != kdbx-*.conf ]]; then
@@ -123,8 +123,8 @@ if [ -n "$old_confs" ]; then
       read -r resp < /dev/tty
       set -e
       if [ "$resp" = y -o "$resp" = Y ]; then
-        if /usr/local/sbin/keepassxc-unlock-setup --upgrade $old_conf; then
-          rm -f $old_conf
+        if sudo /usr/local/sbin/keepassxc-unlock-setup --upgrade $old_conf; then
+          sudo rm -f $old_conf
           echo -e "${fg_orange}Upgraded and removed old configuration '$old_conf'$fg_reset"
         else
           echo -e "${fg_orange}\nFailed to auto-upgrade the old configuration '$old_conf'."
