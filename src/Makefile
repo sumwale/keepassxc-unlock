@@ -40,10 +40,10 @@ $(BUILD_DIR)/%.o: %.c common.h
 	mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -c -o $@ $<
 
-$(TARGETS): $(BUILD_DIR)/keepassxc-%: $(BUILD_DIR)/%.o $(BUILD_DIR)/%-call.o $(BUILD_DIR)/common.o
+$(TARGETS): $(BUILD_DIR)/keepassxc-%: $(BUILD_DIR)/%.o $(BUILD_DIR)/%-main.o $(BUILD_DIR)/common.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-$(MULTICALL_STATIC): $(TARGET_OBJS) $(BUILD_DIR)/common.o $(BUILD_DIR)/multicall.o
+$(MULTICALL_STATIC): $(TARGET_OBJS) $(BUILD_DIR)/common.o $(BUILD_DIR)/multi-call.o
 	$(CC) -static $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) $(STATIC_LIBS)
 
 $(TARGETS_STATIC): $(MULTICALL_STATIC)

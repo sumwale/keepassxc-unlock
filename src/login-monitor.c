@@ -53,7 +53,7 @@ static void handle_new_session(GDBusConnection *system_conn, const gchar *sender
   char service_name[128];
   snprintf(service_name, sizeof(service_name), "keepassxc-unlock@%u.service", user_id);
   g_autoptr(GError) error = NULL;
-  // get all properties of the session
+  // send the `StartUnit` command to start the service (equivalent to `systemctl start ...`)
   g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
       "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StartUnit",
       g_variant_new("(ss)", service_name, "replace"), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
