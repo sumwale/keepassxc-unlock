@@ -8,7 +8,7 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-src_files="src/login-monitor.c src/unlock.c src/common.c src/common.h src/Makefile"
+src_files="src/login-monitor.c src/login-monitor-main.c src/unlock.c src/unlock-main.c src/unlock-setup.c src/unlock-setup-main.c src/common.c src/common.h src/Makefile"
 service_files="systemd/keepassxc-login-monitor.service systemd/keepassxc-unlock@.service"
 doc_files="README.md LICENSE"
 git_site="https://github.com/sumwale/keepassxc-unlock"
@@ -59,10 +59,11 @@ if [ "$1" = "--build" ]; then
   for file in $src_files; do
     $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
   done
-  make -C $tmp_dir "PRODUCT_VERSION=$product_version"
+  make -C $tmp_dir "PRODUCT_VERSION=$product_version" BUILD_DIR=$tmp_dir
   for file in $src_files; do
     rm -f $tmp_dir/$(basename $file)
   done
+  rm -f $tmp_dir/*.o
 else
   # get the latest release tarball removing the commit ID from the product version
   tarball=keepassxc-unlock-$(uname -m).tar.xz
