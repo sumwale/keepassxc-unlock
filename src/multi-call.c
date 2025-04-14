@@ -1,4 +1,4 @@
-// entry point for multicall static binary
+// entry point for multi-call static binary
 
 #include <stdio.h>
 #include <string.h>
@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
     exec_name = argv[0];
   }
   if (strncmp(exec_name, ALL_EXEC, sizeof(ALL_EXEC) - 1) == 0) {
-    fprintf(stderr, "Cannot directly invoke multicall binary\n");
+    fprintf(stderr, "Cannot directly invoke multi-call binary\n");
     return 1;
   } else if (strncmp(exec_name, MONITOR_EXEC, sizeof(MONITOR_EXEC) - 1) == 0) {
     return main_monitor(argc, argv);
@@ -30,6 +30,6 @@ int main(int argc, char *argv[]) {
   } else if (strncmp(exec_name, UNLOCK_EXEC, sizeof(UNLOCK_EXEC) - 1) == 0) {
     return main_unlock(argc, argv);
   }
-  fprintf(stderr, "Unknown executable %s for multicall binary\n", argv[0]);
+  fprintf(stderr, "Unknown executable %s for multi-call binary\n", argv[0]);
   return 1;
 }

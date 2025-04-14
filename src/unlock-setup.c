@@ -367,7 +367,7 @@ int main_setup(int argc, char *argv[]) {
     fflush(stdout);
     g_autofree char *response = NULL;
     size_t sz = 0;
-    if (getline(&response, &sz, stdin) < 2 || tolower(*response) != 'y') { return 0; }
+    if (getline(&response, &sz, stdin) < 2 || tolower(*response) != 'y') return 0;
     key_type = "host";
   }
 
