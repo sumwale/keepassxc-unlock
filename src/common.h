@@ -135,11 +135,11 @@ extern bool decrypt_password(const char *conf_file, const char *conf_name, const
     int passwd_start_line, char *decrypted_passwd, size_t buf_size);
 
 /// @brief Get the value of `DBUS_SESSION_BUS_ADDRESS` environment variable from the environment of
-///        the processes belonging to the given `Scope`. The value from the last process in the list
-///        having the variable set is used.
+///        the processes belonging to the given `Scope`. The value from the first process in the
+///        list having the variable set is used.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param scope the `Scope` where the `DBUS_SESSION_BUS_ADDRESS` has to be searched
-/// @return the value of the `DBUS_SESSION_BUS_ADDRESS` environment variable from the last process
+/// @return the value of the `DBUS_SESSION_BUS_ADDRESS` environment variable from the first process
 ///         in the given scope, or NULL if no process has a setting for the variable
 extern gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar *scope);
 

@@ -138,12 +138,9 @@ static gchar *verify_and_compute_checksum(
   while (g_variant_iter_next(iter, "(suss&o)", NULL, &uid, NULL, NULL, &session_path)) {
     if (uid != user_id) continue;
 
-    // get the session `Type`, `Display` and `Scope` properties
-    g_autofree gchar *display = NULL;
+    // get the session `Scope`
     g_autofree gchar *scope = NULL;
-    bool is_wayland = false;
-    if (!session_valid_for_unlock(
-            system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope)) {
+    if (!session_valid_for_unlock(system_conn, session_path, user_id, NULL, NULL, NULL, &scope)) {
       continue;
     }
 

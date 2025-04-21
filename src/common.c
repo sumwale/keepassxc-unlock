@@ -235,29 +235,9 @@ bool decrypt_password(const char *conf_file, const char *conf_name, const char *
   return true;
 }
 
-/// @brief Get the value of `DBUS_SESSION_BUS_ADDRESS` environment variable from the environment of
-///        the last process (where it is set) in the given list of process IDs.
-/// @param pids array of process IDs
-/// @param pids_len length of `pids` array
-/// @param ret_bus_address the result, if any, is stored in this variable and any previous value
-///                        pointed by this variable is `g_free()`d; this cannot be NULL
-static void get_last_session_bus_address(
-    const guint32 *pids, int pids_len, gchar **ret_bus_address) {
-  g_assert(ret_bus_address != NULL);
-
-  gchar *bus_address = NULL;
-  while (--pids_len >= 0) {
-    if ((bus_address = get_process_env_var(pids[pids_len], "DBUS_SESSION_BUS_ADDRESS")) != NULL) {
-      g_free(*ret_bus_address);
-      *ret_bus_address = bus_address;
-      return;
-    }
-  }
-}
-
 gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar *scope) {
   if (!scope) return NULL;
-  // get the processes under this systemd scope unit, traverse them in reverse and return the first
+  // get the processes under this systemd scope unit, traverse them and return the first
   // `DBUS_SESSION_BUS_ADDRESS` found
   g_autoptr(GError) error = NULL;
   g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
@@ -271,18 +251,12 @@ gchar *get_session_bus_address(GDBusConnection *system_conn, const gchar *scope)
 
   g_autoptr(GVariantIter) iter = NULL;
   g_variant_get(result, "(a(sus))", &iter);
-  // keep a buffer of PIDs, and if it becomes full then keep the last defined session bus address
-  // then start over in the buffer again
-  guint32 current_pid = 0, pids[64];
-  int pids_idx = 0;
+  guint32 current_pid = 0;
   gchar *bus_address = NULL;
   while (g_variant_iter_next(iter, "(sus)", NULL, &current_pid, NULL)) {
-    if (pids_idx >= (int)(sizeof(pids) / sizeof(*pids))) {
-      get_last_session_bus_address(pids, pids_idx, &bus_address);
-      pids_idx = 0;
+    if ((bus_address = get_process_env_var(current_pid, "DBUS_SESSION_BUS_ADDRESS")) != NULL) {
+      break;
     }
-    pids[pids_idx++] = current_pid;
   }
-  get_last_session_bus_address(pids, pids_idx, &bus_address);
   return bus_address;
 }
