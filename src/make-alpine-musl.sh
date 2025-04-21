@@ -2,6 +2,8 @@
 
 set -e
 
+apk update
+apk upgrade
 apk add gcc make coreutils musl-dev glib-dev readline-dev libeconf-dev
 apk add glib-static readline-static ncurses-static zlib-static util-linux-static
 apk cache purge
