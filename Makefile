@@ -39,7 +39,10 @@ package:
 		package_name=keepassxc-unlock-$${arch}.tar.xz; \
 		binaries=$$(compgen -G "$(BUILD_DIR)/keepassxc-*-$${arch}-static"); \
 		binary_names=$$(echo "$${binaries}" | xargs -n1 basename); \
-		tar -C $(BUILD_DIR) -cvf - $${binary_names} | xz -9 -T0 -c - > $${package_name}; \
+		services=$$(compgen -G "$(SYSTEMD_DIR)/*.service"); \
+		service_names=$$(echo "$${services}" | xargs -n1 basename); \
+		rm -f $(BUILD_DIR)/*.service && cp $${services} $(BUILD_DIR)/.; \
+		tar -C $(BUILD_DIR) -cvf - $${binary_names} $${service_names} | xz -9 -T0 -c - > $${package_name}; \
 		rm -f $${package_name}.sig; \
 		gpg --output $${package_name}.sig --detach-sig $${package_name}; \
 	done

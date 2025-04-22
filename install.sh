@@ -48,7 +48,7 @@ tmp_dir=$(mktemp -d)
 
 trap "/bin/rm -rf $tmp_dir" 0 1 2 3 4 5 6 11 12 15
 
-echo -e "${fg_orange}Fetching executables and installing in /usr/local/sbin$fg_reset"
+echo -e "${fg_orange}Stopping login monitor service$fg_reset"
 sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || /bin/true
 if [ "$1" = "--build" ]; then
   echo -e "${fg_cyan}Building the latest git code from source...$fg_reset"
@@ -64,7 +64,12 @@ if [ "$1" = "--build" ]; then
     rm -f $tmp_dir/$(basename $file)
   done
   rm -f $tmp_dir/*.o
+  echo -e "${fg_orange}Fetching systemd service files$fg_reset"
+  for file in $service_files; do
+    $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
+  done
 else
+  echo -e "${fg_orange}Fetching tarball having executables and systemd service files$fg_reset"
   # get the latest release tarball removing the commit ID from the product version
   tarball=keepassxc-unlock-$(uname -m).tar.xz
   $get_cmd $tmp_dir/$tarball "$base_release_url/$tarball"
@@ -97,17 +102,17 @@ else
     fi
   done
 fi
+
+echo -e "${fg_orange}Installing systemd service files in /etc/systemd/system$fg_reset"
+sudo install -t /etc/systemd/system -m 0644 -o root -g root $tmp_dir/*.service
+rm -f $tmp_dir/*.service
+
+echo -e "${fg_orange}Installing binaries in /usr/local/sbin$fg_reset"
 for p in $tmp_dir/*; do
   sudo rm -f /usr/local/sbin/`basename $p`
-  sudo cp -d --preserve=mode,timestamps $p /usr/local/sbin/
+  sudo cp -d --preserve=mode,timestamps $p /usr/local/sbin/.
   rm -f $p
 done
-
-echo -e "${fg_orange}Fetching systemd service file and installing in /etc/systemd/system$fg_reset"
-for file in $service_files; do
-  $get_cmd $tmp_dir/$(basename $file) "$base_url/$file?raw=true"
-done
-sudo install -t /etc/systemd/system -m 0644 -o root -g root $tmp_dir/*
 rm -f $tmp_dir/*
 
 echo -e "${fg_orange}Reloading systemd daemon$fg_reset"

@@ -11,6 +11,7 @@ ExecStart=keepassxc-login-monitor
 LockPersonality=true
 MemoryDenyWriteExecute=yes
 NoNewPrivileges=yes
+DeviceAllow=/dev/tpm0
 DeviceAllow=/dev/tpmrm0
 PrivateTmp=yes
 ProtectClock=yes

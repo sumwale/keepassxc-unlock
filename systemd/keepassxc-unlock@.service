@@ -12,6 +12,7 @@ ExecStart=keepassxc-unlock %i $SESSION_PATH
 LockPersonality=true
 MemoryDenyWriteExecute=yes
 NoNewPrivileges=yes
+DeviceAllow=/dev/tpm0
 DeviceAllow=/dev/tpmrm0
 PrivateTmp=yes
 ProtectClock=yes
