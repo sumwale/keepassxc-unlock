@@ -156,14 +156,14 @@ Enter the key file for the database (empty for none, use <TAB> for file name com
 
 ```
 
-The setup will warn if TPM2 support cannot be detected and provide helpful suggestion.
-Further it will test these parameters for user confirmation and also register the
-keepassxc binary SHA512 checksum which is verified later before auto-unlocking.
+The setup will warn if TPM2 support cannot be detected and, if possible, provide helpful
+suggestions. Further it will test these parameters for user confirmation and also
+register the keepassxc binary SHA512 checksum which is verified later before
+auto-unlocking by the system service.
 
 That's it. Just logout then login again, and all the KeePassXC databases registered
 above will be automatically unlocked, and will continue being unlocked after a screen
-lock/unlock, a sleep/wakeup or other such events that may cause KeePassXC to lock
-automatically.
+unlock or other such events that may cause KeePassXC to lock automatically.
 
 ### Using custom screen lockers
 
