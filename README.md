@@ -76,10 +76,10 @@ mkdir -p $backup_base
 for dir in /etc/keepassxc-unlock/*; do
   backup_dir=$backup_base/`basename $dir`
   mkdir -p $backup_dir
-  for conf in $dir/*; do
-    conf_name=`basename $conf .conf`
+  for conf in $dir/kdbx-*.conf; do
+    conf_name=`basename $conf .conf | sed 's/^kdbx-//'`
     { head -3 $conf; tail -n+4 $conf | systemd-creds --name=$conf_name decrypt - -; } | \
-      gpg -r <GPG_ID> -o - --encrypt - > $backup_dir/$conf_name.gpg
+      gpg -r <GPG_ID> -o - --encrypt - > $backup_dir/kdbx-$conf_name.gpg
   done
 done
 ```
@@ -114,6 +114,8 @@ distributions. The packages on the [releases](https://github.com/sumwale/keepass
 page that are fetched by the install script are signed with a GnuPG key that is verified
 before installation.
 
+To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
+
 If you prefer building the binaries from source, then a dynamically linked version can be
 built and installed by adding `/dev/stdin --build` at the end of `bash` in the commands above.
 This will install the latest version from the git repository:
@@ -133,17 +135,15 @@ As an example, for Debian/Ubuntu based systems, these dependencies can be instal
 `sudo apt install build-essential libglib2.0-dev libreadline-dev` or on Fedora/RHEL based
 systems with: `sudo dnf install gcc make glib2-devel readline-devel`.
 
-To uninstall, change `install.sh` in the above commands to `uninstall.sh`.
-
 
 ## Configuration
 
-Register the KeePassXC databases to be unlocked automatically by running the
-`keepassxc-unlock-setup` script. This has to be run as root user and takes the name
+Register the KeePassXC databases to be unlocked automatically by running
+`keepassxc-unlock-setup`. This has to be run as root user and takes the name
 of the user and the path to the KDBX database as two arguments. It will then prompt
 the user to enter the key file (if any), and the password.
 
-Run this script for all the databases that need to be automatically unlocked for all
+Run this program for all the databases that need to be automatically unlocked for all
 the users. An example run can look like this:
 
 ```sh
@@ -156,7 +156,7 @@ Enter the key file for the database (empty for none, use <TAB> for file name com
 
 ```
 
-The script will warn if TPM2 support cannot be detected and provide helpful suggestions.
+The setup will warn if TPM2 support cannot be detected and provide helpful suggestion.
 Further it will test these parameters for user confirmation and also register the
 keepassxc binary SHA512 checksum which is verified later before auto-unlocking.
 
