@@ -7,7 +7,7 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-sbin_files="keepassxc-unlock-setup keepassxc-login-monitor keepassxc-unlock"
+sbin_files="keepassxc-unlock-setup keepassxc-login-monitor keepassxc-unlock keepassxc-unlock-all"
 old_sbin_files="pam-keepassxc-auth"
 old_package="pam-keepassxc"
 service_files="keepassxc-login-monitor.service keepassxc-unlock@.service"
