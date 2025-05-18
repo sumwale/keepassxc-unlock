@@ -94,9 +94,15 @@ static bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar 
     g_autofree const gchar *env_value = get_process_env_var(kp_pid, "WAYLAND_DISPLAY");
     return env_value && *env_value != '\0';
   } else {
-    // for the case of X11, the value of $DISPLAY should match the passed `Display` session property
     g_autofree const gchar *env_value = get_process_env_var(kp_pid, "DISPLAY");
-    return g_strcmp0(env_value, display) == 0;
+    if (display && *display != '\0') {
+      // when set, the value of $DISPLAY should match the passed `Display` session property
+      return g_strcmp0(env_value, display) == 0;
+    } else {
+      // just check non-null value since `Display` session property may not be set
+      // if the display manager that launched the session is running in Wayland mode
+      return env_value && *env_value != '\0';
+    }
   }
 }
 
