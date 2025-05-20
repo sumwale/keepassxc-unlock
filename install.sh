@@ -15,7 +15,7 @@ git_site="https://github.com/sumwale/keepassxc-unlock"
 base_url="$git_site/blob/main"
 base_release_url="$git_site/releases/latest/download"
 # GPG key used for signing the release tarballs
-gpg_key_id=45AA1929F5181FA12E8DC3FBF6F955142B0ED1AC
+gpg_key_id=C9C718FF0C9D3AA4B54E18D93FD1139880CD9DB7
 
 # ensure that system PATHs are always searched first
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin:$PATH"
