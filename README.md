@@ -174,12 +174,13 @@ able to unlock the databases as expected.
 However, if a custom screen lock program is being used that does not generate those
 events, then KeePassXC itself will not be able to automatically lock the databases
 when the screen is locked. For KeePassXC to lock the databases in such a case, explicit
-commands to generate D-Bus events to lock the database in the screen locker script
-(e.g. using KeePassXC dbus API as shown in the KeePassXC wiki). But this will not help
-`keepassxc-unlock` service to unlock the databases automatically on screen unlock.
+commands to generate D-Bus events to lock the database can be added to the screen locker
+script (e.g. using KeePassXC dbus API as shown in the KeePassXC wiki). But this will not
+help `keepassxc-unlock` service to unlock the databases automatically on screen unlock.
 
-A better option will be to generate the proper system D-Bus events for the session
+A better option is to generate the proper system D-Bus events for the session
 in the lock script namely toggling the boolean `LockedHint` property in the object
 `/org/freedesktop/login1/session/<session ID>` on the bus `org.freedesktop.login1`.
-One way is to use `loginctl lock-session`/`unlock-session`. This way both KeePassXC
-and the `keepassxc-unlock` service will be able to lock/unlock the databases correctly.
+One way is to use `loginctl lock-session`/`loginctl unlock-session` calls in the screen
+locker script to generate those events explicitly. This way both KeePassXC and the
+`keepassxc-unlock` service will be able to lock/unlock the databases correctly.
