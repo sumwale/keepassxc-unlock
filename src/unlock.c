@@ -327,7 +327,7 @@ static void handle_keepassxc_start(GDBusConnection *session_conn, const char *se
         "KeePassXC started, unlocking registered database(s) for UID=%u", session_data->user_id);
     unlock_databases(system_conn, session_data, 5, true);
     // unsubscribe to this signal here on (so if user closes and start KeePassXC again, then it
-    // won't be auto-unlocked by design, though it will still have if session goes from
+    // won't be auto-unlocked by design, though it will still be unlocked if the session goes from
     // lock->unlock or inactive->active)
     int kp_subscription_id = g_atomic_int_exchange(&session_data->kp_subscription_id, 0);
     if (kp_subscription_id != 0) {
@@ -380,8 +380,8 @@ int main_unlock(int argc, char *argv[]) {
   g_autofree gchar *display = NULL;
   g_autofree gchar *scope = NULL;
   bool is_wayland = false;
-  if (!session_valid_for_unlock(
-          system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope)) {
+  if (session_valid_for_unlock(
+          system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope) != 1) {
     g_warning(
         "No valid X11/Wayland session found for UID=%u in sessionPath='%s'", user_id, session_path);
     return 0;
@@ -417,7 +417,7 @@ int main_unlock(int argc, char *argv[]) {
       session_path,                           // object path
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_session_event, &user_data, NULL);
   if (session_subscription_id == 0) {
-    g_warning("Failed to subscribe to receive D-Bus signals for %s", session_path);
+    g_warning("Failed to subscribe to D-Bus 'PropertiesChanged' signals for %s", session_path);
     return 1;
   }
 
@@ -427,7 +427,7 @@ int main_unlock(int argc, char *argv[]) {
       LOGIN_MANAGER_INTERFACE, "SessionRemoved", LOGIN_OBJECT_PATH, NULL, G_DBUS_SIGNAL_FLAGS_NONE,
       handle_session_close, &user_data, NULL);
   if (login_subscription_id == 0) {
-    g_warning("Failed to subscribe to receive D-Bus signals for %s", LOGIN_OBJECT_PATH);
+    g_warning("Failed to subscribe to D-Bus 'SessionRemoved' signals for %s", LOGIN_OBJECT_PATH);
     g_dbus_connection_signal_unsubscribe(system_conn, session_subscription_id);
     return 1;
   }

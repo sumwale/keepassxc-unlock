@@ -140,7 +140,8 @@ static gchar *verify_and_compute_checksum(
 
     // get the session `Scope`
     g_autofree gchar *scope = NULL;
-    if (!session_valid_for_unlock(system_conn, session_path, user_id, NULL, NULL, NULL, &scope)) {
+    if (session_valid_for_unlock(system_conn, session_path, user_id, NULL, NULL, NULL, &scope) !=
+        1) {
       continue;
     }
 
