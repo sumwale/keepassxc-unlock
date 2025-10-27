@@ -18,6 +18,12 @@ typedef struct {
 static void start_unlock_service(
     GDBusConnection *system_conn, const gchar *session_path, guint32 user_id);
 
+/// @brief Cleanup session data for the case of TTY login managers that launch graphical
+///        session later. Optionally can also trigger unlock service for the session.
+/// @param system_conn the `GBusConnection` object for the system D-Bus
+/// @param session_path path of the session
+/// @param session_map hash table that maps session paths to the corresponding `SessionData`
+/// @param trigger_unlock_svc if true then also trigger unlock service for the session
 static void tty_session_cleanup(GDBusConnection *system_conn, const gchar *session_path,
     GHashTable *session_map, bool trigger_unlock_svc) {
   g_mutex_lock(&s_session_map_mutex);
