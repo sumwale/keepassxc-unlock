@@ -194,7 +194,8 @@ int main_monitor(int argc, char *argv[]) {
 
   // map to hold session data for each tty session being tracked for possible "upgrade"
   // to graphical session
-  GHashTable *session_map = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  g_autoptr(GHashTable) session_map =
+      g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 
   // subscribe to `SessionNew` signal on org.freedesktop.login1
   guint subscription_id = g_dbus_connection_signal_subscribe(connection,
@@ -205,7 +206,6 @@ int main_monitor(int argc, char *argv[]) {
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_new_session, session_map, NULL);
   if (subscription_id == 0) {
     g_critical("Failed to subscribe to D-Bus 'SessionNew' signals for %s", LOGIN_OBJECT_PATH);
-    g_hash_table_destroy(session_map);
     return 1;
   }
   // subscribe to `SessionRemoved` signal too in order to clear session data for tty logins
@@ -218,7 +218,6 @@ int main_monitor(int argc, char *argv[]) {
   if (session_rm_subscription_id == 0) {
     g_critical("Failed to subscribe to D-Bus 'SessionRemoved' signals for %s", LOGIN_OBJECT_PATH);
     g_dbus_connection_signal_unsubscribe(connection, subscription_id);
-    g_hash_table_destroy(session_map);
     return 1;
   }
 
@@ -228,6 +227,5 @@ int main_monitor(int argc, char *argv[]) {
 
   g_dbus_connection_signal_unsubscribe(connection, subscription_id);
   g_dbus_connection_signal_unsubscribe(connection, session_rm_subscription_id);
-  g_hash_table_destroy(session_map);
   return 0;
 }
