@@ -51,7 +51,7 @@ bool user_has_db_configs(guint32 user_id) {
   return has_configs;
 }
 
-bool session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_path,
+int session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_path,
     guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr,
     gchar **scope_ptr) {
   g_autoptr(GError) error = NULL;
@@ -63,7 +63,7 @@ bool session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session
   if (!session_props) {
     g_warning(
         "Failed to get properties for '%s': %s", session_path, error ? error->message : "(null)");
-    return false;
+    return 0;
   }
 
   // parse the properties to check if the session is valid
@@ -103,7 +103,8 @@ bool session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session
   }
 
   // a session is a target for auto-unlock if it is of a supported type, not remote, and active
-  return user_match && has_supported_type && !is_remote && is_active;
+  if (user_match && !is_remote && is_active) return has_supported_type ? 1 : 2;
+  return 0;
 }
 
 gchar *get_process_env_var(guint32 pid, const char *env_var) {

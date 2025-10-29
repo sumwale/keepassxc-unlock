@@ -65,6 +65,11 @@ extern bool user_has_db_configs(guint32 user_id);
 /// @brief Check if auto-unlock should be attempted for a session with given path
 ///        (of the form `/org/freedesktop/login1/session/...`). The checks performed include
 ///        the type which must be `x11` or `wayland`, should be active and should not be remote.
+///        The return value is a tri-state which is 0 if the session is not valid and cannot
+///        be valid in future either, is 1 is the session is currently validm and 2 if the type
+///        of session is not `x11` or `wayland` rather a terminal session which can potentially
+///        launch a graphical session in future. This allows callers to handle graphical as well
+///        as terminal login managers.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param session_path path of the session to check
 /// @param check_uid check this against the session owner's numeric ID if `out_uid_ptr` is NULL
@@ -77,8 +82,10 @@ extern bool user_has_db_configs(guint32 user_id);
 /// @param scope_ptr pointer to `gchar*` string that is filled with the value of `Scope`
 ///                  property if non-NULL; this should be released with `g_free()` after use or if
 ///                  the method failed returning `false`
-/// @return `true` if auto-unlock can be attempted for the session else `false`
-extern bool session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_path,
+/// @return `0` if auto-unlock should not be attempted for the session, `1` if auto-unlock can be
+///         attempted immediately and `2` if auto-unlock can be attempted in the future if the
+///         session type changes to `x11` or `wayland` in future
+extern int session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_path,
     guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr,
     gchar **scope_ptr);
 
