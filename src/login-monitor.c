@@ -1,6 +1,7 @@
 #include "common.h"
 
 
+// no need of g_mutex_init() for static storage which is zero'ed on initialization
 static GMutex s_session_map_mutex;
 
 /// @brief Convenience structure to hold session related data passed to dbus signal callbacks.
@@ -57,7 +58,7 @@ static void on_session_properties_changed(GDBusConnection *system_conn, const gc
   while (g_variant_iter_loop(iter, "{&sv}", &key, &value)) {
     if (g_strcmp0(key, "Type") == 0) {
       const gchar *type_val = g_variant_get_string(value, NULL);
-      // start auto-unlock service for the session if it's type switched to a graphical one
+      // start auto-unlock service for the session if it's type has switched to a graphical one
       if (g_strcmp0(type_val, "wayland") == 0 || g_strcmp0(type_val, "x11") == 0) {
         tty_session_cleanup(system_conn, session_path, (GHashTable *)user_data, true);
       }
