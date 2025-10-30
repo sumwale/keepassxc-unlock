@@ -3,7 +3,7 @@
 This service for KeePassXC allows full passwordless unlocking of registered KeepassXC
 databases after a successful login or screen unlock.
 
-Unlike all other solutions, the password does not have to have any relation to the
+Unlike other solutions, the password does not have to have any relation to the
 login password of the user. In fact the user may not even be using password for login
 (e.g. using fingerprint or any other PAM authentication scheme). In addition this
 module can automatically unlock any number of KeepassXC databases and not just a single
@@ -59,9 +59,9 @@ if this gets integrated into KeePassXC distribution (except if it is running ins
 **Now that I have to never enter the passwords, I will likely forget them**
 
 You should absolutely keep a secure copy of the KeePassXC database passwords elsewhere.
-The keys used for encryption are completely device specific and will not work on any
-other devices, so a full system backup cannot be used to re-create the passwords
-in case the device dies or gets stolen.
+The keys used for encryption are completely device specific if TPM2 is being used and
+will not work on any other devices, so a full system backup cannot be used to re-create
+the passwords in case the device dies or gets stolen.
 
 To include the passwords as part of a backup, a script can be executed before the
 scheduled backup to extract the passwords that can be encrypted with your GPG key
@@ -186,7 +186,7 @@ locker script to generate those events explicitly. This way both KeePassXC and t
 `keepassxc-unlock` service will be able to lock/unlock the databases correctly.
 
 Some sessions like Hyprland do not support systemd-logind's session lock/unlock which
-will cause `loginctl lock-session`/`unlock-session` to fail. For such cases explicit
+will cause `loginctl lock-session`/`unlock-session` to be useless. For such cases explicit
 D-Bus calls to toggle the `LockedHint` property as well as those to lock the KeePassXC
 databases will be required. For example, a script like below can be used instead of the
 screen lock program:
