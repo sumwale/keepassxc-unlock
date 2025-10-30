@@ -184,3 +184,26 @@ in the lock script namely toggling the boolean `LockedHint` property in the obje
 One way is to use `loginctl lock-session`/`loginctl unlock-session` calls in the screen
 locker script to generate those events explicitly. This way both KeePassXC and the
 `keepassxc-unlock` service will be able to lock/unlock the databases correctly.
+
+Some sessions like Hyprland do not support systemd-logind's session lock/unlock which
+will cause `loginctl lock-session`/`unlock-session` to fail. For such cases explicit
+D-Bus calls to toggle the `LockedHint` property as well as those to lock the KeePassXC
+databases will be required. For example, a script like below can be used instead of the
+screen lock program:
+
+```sh
+#!/bin/sh
+
+set -e
+
+DBUS_SEND_LOCK_ARGS="--system --print-reply --type=method_call --dest=org.freedesktop.login1 /org/freedesktop/login1/session/auto org.freedesktop.login1.Session.SetLockedHint"
+
+dbus-send $DBUS_SEND_LOCK_ARGS boolean:true
+dbus-send --session --print-reply --dest=org.keepassxc.KeePassXC.MainWindow /keepassxc org.keepassxc.KeePassXC.MainWindow.lockAllDatabases || /bin/true
+
+<screen lock program>
+
+dbus-send $DBUS_SEND_LOCK_ARGS boolean:false
+```
+
+Or add the snippets above to lock/unlock commands of your session (e.g. lock\_cmd/unlock\_cmd in hypridle.conf).
