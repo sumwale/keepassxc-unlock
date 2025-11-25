@@ -36,10 +36,10 @@ if ! [[ "$resp" =~ [Yy] ]]; then
 fi
 
 echo -e "${fg_orange}Stopping systemd services and removing the service files$fg_reset"
-for unit in $(sudo systemctl -q list-units 'keepassxc-unlock@*.service' | awk '{ print $1 }'); do
+while IFS= read -r unit; do
   echo -e "$fg_orange  Stopping service '$unit'$fg_reset"
   sudo systemctl stop "$unit"
-done
+done < <(systemctl show 'keepassxc-unlock@*.service' --property=Id --value --no-pager | grep . | uniq)
 unit=keepassxc-login-monitor.service
 echo -e "$fg_orange  Stopping service '$unit'$fg_reset"
 sudo systemctl stop "$unit" || true
