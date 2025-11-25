@@ -21,10 +21,6 @@ service_files=(
     keepassxc-login-monitor.service
     keepassxc-unlock@.service
 )
-doc_files=(
-    README.md
-    LICENSE
-)
 config_dir=/etc/keepassxc-unlock
 
 # ensure that system PATHs are always searched first
