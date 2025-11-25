@@ -33,6 +33,13 @@ base_release_url="$git_site/releases/latest/download"
 # GPG key used for signing the release tarballs
 gpg_key_id=C9C718FF0C9D3AA4B54E18D93FD1139880CD9DB7
 
+reset_tmp() {
+    if [[ -d "$tmp_dir" ]]; then
+        rm -rf -- "$tmp_dir"
+    fi
+    tmp_dir="$(mktemp -d)"
+}
+
 # ensure that system PATHs are always searched first
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin:$PATH"
 
@@ -64,7 +71,7 @@ if [[ "$resp" =~ [Nn] ]]; then
   exit 2
 fi
 
-tmp_dir="$(mktemp -d)"
+reset_tmp
 
 trap "/bin/rm -rf -- '$tmp_dir'" 0 1 2 3 4 5 6 11 12 15
 
@@ -83,7 +90,7 @@ if [[ "$1" == '--build' ]]; then
   for file in "${src_files[@]}"; do
     rm -f -- "$tmp_dir/$(basename -- "$file")"
   done
-  rm -f -- "$tmp_dir"/*.o
+  find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.o' -type f -delete
   echo -e "${fg_orange}Fetching systemd service files$fg_reset"
   for file in "${service_files[@]}"; do
     $get_cmd "$tmp_dir/$(basename -- "$file")" "$base_url/$file?raw=true"
@@ -111,8 +118,8 @@ else
   tar -C "$tmp_dir" -xvf "$tmp_dir/$tarball"
   rm -f -- "$tmp_dir/$tarball" "$tmp_dir/$tarball.sig"
   static_suffix="-$(uname -m)-static"
-  chmod 0755 "$tmp_dir"/*"$static_suffix"
-  for file in "$tmp_dir"/*"$static_suffix"; do
+  while IFS= read -r -d $'\0' file; do
+    chmod 0755 "$file"
     if [[ -L "$file" ]]; then
       target="$(readlink -- "$file")"
       rm -f -- "$file"
@@ -120,20 +127,21 @@ else
     else
       mv -- "$file" "${file%"$static_suffix"}"
     fi
-  done
+  done < <(find "$tmp_dir" -maxdepth 1 -mindepth 1 -name "*$static_suffix" -print0)
 fi
 
 echo -e "${fg_orange}Installing systemd service files in /etc/systemd/system$fg_reset"
-sudo install -t /etc/systemd/system -m 0644 -o root -g root "$tmp_dir"/*.service
-rm -f "$tmp_dir"/*.service
+find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f \
+    -exec sudo install -t /etc/systemd/system -m 0644 -o root -g root '{}' +
+find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f -delete
 
 echo -e "${fg_orange}Installing binaries in /usr/local/sbin$fg_reset"
-for p in "$tmp_dir"/*; do
+while IFS= read -r -d $'\0' p; do
   sudo rm -f -- "/usr/local/sbin/$(basename -- "$p")"
   sudo cp -d --preserve=mode,timestamps -- "$p" /usr/local/sbin/.
   rm -f -- "$p"
-done
-rm -f "$tmp_dir"/*
+done < <(find "$tmp_dir" -maxdepth 1 -mindepth 1 -print0)
+reset_tmp
 
 echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
 sudo systemctl daemon-reload
@@ -145,30 +153,28 @@ echo -e "${fg_cyan}Fetching LICENSE and doc files and installing in /usr/local/s
 for file in "${doc_files[@]}"; do
   $get_cmd "$tmp_dir/$(basename -- "$file")" "$base_url/$file?raw=true"
 done
-sudo install -D -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root "$tmp_dir"/*
-rm -f -- "$tmp_dir"/*
+find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
+    install -D -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
+reset_tmp
 
 # upgrade obsolete configuration files after user confirmation
-old_confs=$(sudo bash -c 'compgen -G /etc/keepassxc-unlock/*/*.conf' || true)
-if [[ -n "$old_confs" ]]; then
-  for old_conf in $old_confs; do
-    if [[ "$(basename -- "$old_conf")" != kdbx-*.conf ]]; then
-      echo -en "${fg_orange}Found obsolete configuration '$old_conf'.\nAuto upgrade? (y/N) $fg_reset"
-      set +e
-      read -r resp < /dev/tty
-      set -e
-      if [[ "$resp" =~ [Yy] ]]; then
-        if sudo /usr/local/sbin/keepassxc-unlock-setup --upgrade "$old_conf"; then
-          sudo rm -f "$old_conf"
-          echo -e "${fg_orange}Upgraded and removed old configuration '$old_conf'$fg_reset"
-        else
-          echo -e "${fg_orange}\nFailed to auto-upgrade the old configuration '$old_conf'."
-          echo -e "Please remove it manually and register using keepassxc-unlock-setup.$fg_reset"
-        fi
+while IFS= read -r -d $'\0' old_conf; do
+  if [[ "$(basename -- "$old_conf")" != kdbx-*.conf ]]; then
+    echo -en "${fg_orange}Found obsolete configuration '$old_conf'.\nAuto upgrade? (y/N) $fg_reset"
+    set +e
+    read -r resp < /dev/tty
+    set -e
+    if [[ "$resp" =~ [Yy] ]]; then
+      if sudo /usr/local/sbin/keepassxc-unlock-setup --upgrade "$old_conf"; then
+        sudo rm -f "$old_conf"
+        echo -e "${fg_orange}Upgraded and removed old configuration '$old_conf'$fg_reset"
+      else
+        echo -e "${fg_orange}\nFailed to auto-upgrade the old configuration '$old_conf'."
+        echo -e "Please remove it manually and register using keepassxc-unlock-setup.$fg_reset"
       fi
     fi
-  done
-fi
+  fi
+done < <(find /etc/keepassxc-unlock -maxdepth 2 -mindepth 2 -name '*.conf' -print0)
 
 echo
 echo -e "${fg_orange}Start user-specific auto-unlock service? This will only work if"
