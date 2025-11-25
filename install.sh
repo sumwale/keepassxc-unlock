@@ -132,7 +132,7 @@ fi
 
 echo -e "${fg_orange}Installing systemd service files in /etc/systemd/system$fg_reset"
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f \
-    -exec sudo install -t /etc/systemd/system -m 0644 -o root -g root '{}' +
+    -exec sudo install -Ct /etc/systemd/system -m 0644 -o root -g root '{}' +
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f -delete
 
 echo -e "${fg_orange}Installing binaries in /usr/local/sbin$fg_reset"
@@ -154,7 +154,7 @@ for file in "${doc_files[@]}"; do
   $get_cmd "$tmp_dir/$(basename -- "$file")" "$base_url/$file?raw=true"
 done
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
-    install -D -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
+    install -CD -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
 reset_tmp
 
 # upgrade obsolete configuration files after user confirmation
