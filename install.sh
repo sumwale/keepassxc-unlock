@@ -136,11 +136,8 @@ find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f \
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f -delete
 
 echo -e "${fg_orange}Installing binaries in /usr/local/sbin$fg_reset"
-while IFS= read -r -d $'\0' p; do
-  sudo rm -f -- "/usr/local/sbin/$(basename -- "$p")"
-  sudo cp -d --preserve=mode,timestamps -- "$p" /usr/local/sbin/.
-  rm -f -- "$p"
-done < <(find "$tmp_dir" -maxdepth 1 -mindepth 1 -print0)
+find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
+    sudo install -Ct /usr/local/sbin -m 0750 -o root -g root '{}' +
 reset_tmp
 
 echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
