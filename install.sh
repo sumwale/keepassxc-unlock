@@ -27,7 +27,7 @@ doc_files=(
     README.md
     LICENSE
 )
-git_site='https://github.com/sumwale/keepassxc-unlock'
+git_site="https://github.com/sumwale/keepassxc-unlock"
 base_url="$git_site/blob/main"
 base_release_url="$git_site/releases/latest/download"
 # GPG key used for signing the release tarballs
@@ -44,9 +44,9 @@ reset_tmp() {
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin:$PATH"
 
 if type -p curl >/dev/null; then
-  get_cmd='curl -fsSL -o'
+  get_cmd="curl -fsSL -o"
 elif type -p wget >/dev/null; then
-  get_cmd='wget -q -O'
+  get_cmd="wget -q -O"
 else
   echo -e "${fg_red}Neither curl nor wget found!$fg_reset"
   exit 1
@@ -77,7 +77,7 @@ trap "/bin/rm -rf -- '$tmp_dir'" 0 1 2 3 4 5 6 11 12 15
 
 echo -e "${fg_orange}Stopping login monitor service$fg_reset"
 sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || true
-if [[ "$1" == '--build' ]]; then
+if [[ "$1" == "--build" ]]; then
   echo -e "${fg_cyan}Building the latest git code from source...$fg_reset"
   # first get version.sh
   $get_cmd "$tmp_dir/version.sh" "$base_url/version.sh?raw=true"
@@ -183,15 +183,15 @@ read -r resp < /dev/tty
 set -e
 if [[ "$resp" =~ [Yy] ]]; then
   # find the session path for this session, write to session.env and start the service
-  session_id="$(dbus-send --system --print-reply --type=method_call \
+  session_id=$(dbus-send --system --print-reply --type=method_call \
     --dest=org.freedesktop.login1 /org/freedesktop/login1/session/auto \
     org.freedesktop.DBus.Properties.Get string:org.freedesktop.login1.Session string:Id | \
-    sed -n 's/.*string "\([0-9]\+\).*/\1/p')"
+    sed -n 's/.*string "\([0-9]\+\).*/\1/p')
   if [[ -n "$session_id" ]]; then
-    session_path="$(dbus-send --system --print-reply --type=method_call \
+    session_path=$(dbus-send --system --print-reply --type=method_call \
       --dest=org.freedesktop.login1 /org/freedesktop/login1 \
       org.freedesktop.login1.Manager.GetSession "string:$session_id" | \
-      sed -n 's/.*object path "\([^"]*\).*/\1/p')"
+      sed -n 's/.*object path "\([^"]*\).*/\1/p')
     if [[ -n "$session_path" ]]; then
       echo "SESSION_PATH=$session_path" | sudo tee "/etc/keepassxc-unlock/$EUID/session.env"
       service_name="keepassxc-unlock@${EUID}.service"
