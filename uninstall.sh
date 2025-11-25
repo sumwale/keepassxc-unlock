@@ -46,18 +46,18 @@ sudo systemctl stop "$unit" || true
 echo -e "$fg_orange  Disabling service '$unit'$fg_reset"
 sudo systemctl disable "$unit" || true
 for file in "${service_files[@]}"; do
-  sudo rm -f -- "/etc/systemd/system/$file"
+  sudo rm -f "/etc/systemd/system/$file"
 done
 echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
 sudo systemctl daemon-reload
 
 echo -e "${fg_orange}Removing executables from /usr/local/sbin$fg_reset"
 for file in "${sbin_files[@]}" "${old_sbin_files[@]}"; do
-  sudo rm -f -- "/usr/local/sbin/$file"
+  sudo rm -f "/usr/local/sbin/$file"
 done
 
 echo -e "${fg_orange}Removing LICENSE and doc files from /usr/local/share/doc$fg_reset"
-sudo rm -rf -- /usr/local/share/doc/keepassxc-unlock "/usr/local/share/doc/$old_package"
+sudo rm -rf /usr/local/share/doc/keepassxc-unlock "/usr/local/share/doc/$old_package"
 
 if [[ -d "$config_dir" ]]; then
   echo
@@ -70,7 +70,7 @@ if [[ -d "$config_dir" ]]; then
   set -e
   if [[ "$resp" == YES ]]; then
     echo -e "${fg_orange}Removing /etc/keepassxc-unlock$fg_reset"
-    sudo rm -rf -- /etc/keepassxc-unlock
+    sudo rm -rf /etc/keepassxc-unlock
   fi
 fi
 

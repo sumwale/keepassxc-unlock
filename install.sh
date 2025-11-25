@@ -35,7 +35,7 @@ gpg_key_id=C9C718FF0C9D3AA4B54E18D93FD1139880CD9DB7
 
 reset_tmp() {
     if [[ -d "$tmp_dir" ]]; then
-        rm -rf -- "$tmp_dir"
+        rm -rf "$tmp_dir"
     fi
     tmp_dir="$(mktemp -d)"
 }
@@ -73,7 +73,7 @@ fi
 
 reset_tmp
 
-trap "/bin/rm -rf -- '$tmp_dir'" 0 1 2 3 4 5 6 11 12 15
+trap "/bin/rm -rf '$tmp_dir'" 0 1 2 3 4 5 6 11 12 15
 
 echo -e "${fg_orange}Stopping login monitor service$fg_reset"
 sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || true
@@ -82,18 +82,18 @@ if [[ "$1" == "--build" ]]; then
   # first get version.sh
   $get_cmd "$tmp_dir/version.sh" "$base_url/version.sh?raw=true"
   product_version="$(bash "$tmp_dir/version.sh" --remote)"
-  rm -f -- "$tmp_dir/version.sh"
+  rm -f "$tmp_dir/version.sh"
   for file in "${src_files[@]}"; do
-    $get_cmd "$tmp_dir/$(basename -- "$file")" "$base_url/$file?raw=true"
+    $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
   done
   make -C "$tmp_dir" "PRODUCT_VERSION=$product_version" "BUILD_DIR=$tmp_dir"
   for file in "${src_files[@]}"; do
-    rm -f -- "$tmp_dir/$(basename -- "$file")"
+    rm -f "$tmp_dir/$(basename "$file")"
   done
   find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.o' -type f -delete
   echo -e "${fg_orange}Fetching systemd service files$fg_reset"
   for file in "${service_files[@]}"; do
-    $get_cmd "$tmp_dir/$(basename -- "$file")" "$base_url/$file?raw=true"
+    $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
   done
 else
   echo -e "${fg_orange}Fetching tarball having executables and systemd service files$fg_reset"
@@ -116,16 +116,16 @@ else
     gpg --verify --assert-signer "$gpg_key_id" "$tmp_dir/$tarball.sig" "$tmp_dir/$tarball"
   fi
   tar -C "$tmp_dir" -xvf "$tmp_dir/$tarball"
-  rm -f -- "$tmp_dir/$tarball" "$tmp_dir/$tarball.sig"
+  rm -f "$tmp_dir/$tarball" "$tmp_dir/$tarball.sig"
   static_suffix="-$(uname -m)-static"
   while IFS= read -r -d $'\0' file; do
     chmod 0755 "$file"
     if [[ -L "$file" ]]; then
-      target="$(readlink -- "$file")"
-      rm -f -- "$file"
-      ln -s -- "${target%"$static_suffix"}" "${file%"$static_suffix"}"
+      target="$(readlink "$file")"
+      rm -f "$file"
+      ln -s "${target%"$static_suffix"}" "${file%"$static_suffix"}"
     else
-      mv -- "$file" "${file%"$static_suffix"}"
+      mv "$file" "${file%"$static_suffix"}"
     fi
   done < <(find "$tmp_dir" -maxdepth 1 -mindepth 1 -name "*$static_suffix" -print0)
 fi
@@ -148,7 +148,7 @@ sudo systemctl enable --now keepassxc-login-monitor.service
 
 echo -e "${fg_cyan}Fetching LICENSE and doc files and installing in /usr/local/share/doc$fg_reset"
 for file in "${doc_files[@]}"; do
-  $get_cmd "$tmp_dir/$(basename -- "$file")" "$base_url/$file?raw=true"
+  $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
 done
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
     install -CD -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
@@ -156,7 +156,7 @@ reset_tmp
 
 # upgrade obsolete configuration files after user confirmation
 while IFS= read -r -d $'\0' old_conf; do
-  if [[ "$(basename -- "$old_conf")" != kdbx-*.conf ]]; then
+  if [[ "$(basename "$old_conf")" != kdbx-*.conf ]]; then
     echo -en "${fg_orange}Found obsolete configuration '$old_conf'.\nAuto upgrade? (y/N) $fg_reset"
     set +e
     read -r resp < /dev/tty
