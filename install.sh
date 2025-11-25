@@ -45,7 +45,10 @@ else
   exit 1
 fi
 
-if ! type -p systemctl >/dev/null; then
+if [[ "$EUID" -eq 0 ]]; then
+  echo -e "${fg_red}Do not run script as root"
+  exit 1
+elif ! type -p systemctl >/dev/null; then
   echo -e "${fg_red}No systemctl found$fg_reset - this program expects systemd"
   exit 1
 fi
@@ -177,7 +180,6 @@ read -r resp < /dev/tty
 set -e
 if [[ "$resp" =~ [Yy] ]]; then
   # find the session path for this session, write to session.env and start the service
-  uid="$(id -u)"
   session_id="$(dbus-send --system --print-reply --type=method_call \
     --dest=org.freedesktop.login1 /org/freedesktop/login1/session/auto \
     org.freedesktop.DBus.Properties.Get string:org.freedesktop.login1.Session string:Id | \
@@ -188,8 +190,8 @@ if [[ "$resp" =~ [Yy] ]]; then
       org.freedesktop.login1.Manager.GetSession "string:$session_id" | \
       sed -n 's/.*object path "\([^"]*\).*/\1/p')"
     if [[ -n "$session_path" ]]; then
-      echo "SESSION_PATH=$session_path" | sudo tee "/etc/keepassxc-unlock/$uid/session.env"
-      service_name="keepassxc-unlock@$uid.service"
+      echo "SESSION_PATH=$session_path" | sudo tee "/etc/keepassxc-unlock/$EUID/session.env"
+      service_name="keepassxc-unlock@${EUID}.service"
       echo -e "${fg_orange}Starting $service_name$fg_reset"
       sudo systemctl stop "$service_name" 2>/dev/null || true
       sudo systemctl start "$service_name" || true
