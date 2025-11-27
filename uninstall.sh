@@ -7,20 +7,20 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-sbin_files=(
+sbin_files="
     keepassxc-unlock-setup
     keepassxc-login-monitor
     keepassxc-unlock
     keepassxc-unlock-all
-)
-old_sbin_files=(
+"
+old_sbin_files="
     pam-keepassxc-auth
-)
+"
 old_package='pam-keepassxc'
-service_files=(
+service_files="
     keepassxc-login-monitor.service
     keepassxc-unlock@.service
-)
+"
 config_dir=/etc/keepassxc-unlock
 
 # ensure that system PATHs are always searched first
@@ -45,14 +45,14 @@ echo -e "$fg_orange  Stopping service '$unit'$fg_reset"
 sudo systemctl stop "$unit" || true
 echo -e "$fg_orange  Disabling service '$unit'$fg_reset"
 sudo systemctl disable "$unit" || true
-for file in "${service_files[@]}"; do
+for file in $service_files; do
   sudo rm -f "/etc/systemd/system/$file"
 done
 echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
 sudo systemctl daemon-reload
 
 echo -e "${fg_orange}Removing executables from /usr/local/sbin$fg_reset"
-for file in "${sbin_files[@]}" "${old_sbin_files[@]}"; do
+for file in $sbin_files  $old_sbin_files; do
   sudo rm -f "/usr/local/sbin/$file"
 done
 

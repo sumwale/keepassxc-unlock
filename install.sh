@@ -8,7 +8,7 @@ fg_orange='\033[33m'
 fg_cyan='\033[36m'
 fg_reset='\033[00m'
 
-src_files=(
+src_files="
     src/login-monitor.c
     src/login-monitor-main.c
     src/unlock.c
@@ -18,15 +18,15 @@ src_files=(
     src/common.c
     src/common.h
     src/Makefile
-)
-service_files=(
+"
+service_files="
     systemd/keepassxc-login-monitor.service
     systemd/keepassxc-unlock@.service
-)
-doc_files=(
+"
+doc_files="
     README.md
     LICENSE
-)
+"
 git_site="https://github.com/sumwale/keepassxc-unlock"
 base_url="$git_site/blob/main"
 base_release_url="$git_site/releases/latest/download"
@@ -83,16 +83,16 @@ if [[ "$1" == "--build" ]]; then
   $get_cmd "$tmp_dir/version.sh" "$base_url/version.sh?raw=true"
   product_version="$(bash "$tmp_dir/version.sh" --remote)"
   rm -f "$tmp_dir/version.sh"
-  for file in "${src_files[@]}"; do
+  for file in $src_files; do
     $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
   done
   make -C "$tmp_dir" "PRODUCT_VERSION=$product_version" "BUILD_DIR=$tmp_dir"
-  for file in "${src_files[@]}"; do
+  for file in $src_files; do
     rm -f "$tmp_dir/$(basename "$file")"
   done
   find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.o' -type f -delete
   echo -e "${fg_orange}Fetching systemd service files$fg_reset"
-  for file in "${service_files[@]}"; do
+  for file in $service_files; do
     $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
   done
 else
@@ -147,7 +147,7 @@ echo -e "${fg_orange}Enabling and starting login monitor service$fg_reset"
 sudo systemctl enable --now keepassxc-login-monitor.service
 
 echo -e "${fg_cyan}Fetching LICENSE and doc files and installing in /usr/local/share/doc$fg_reset"
-for file in "${doc_files[@]}"; do
+for file in $doc_files; do
   $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
 done
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
