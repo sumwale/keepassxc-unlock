@@ -53,7 +53,7 @@ else
 fi
 
 if [[ "$EUID" -eq 0 ]]; then
-  echo -e "${fg_red}Do not run script as root"
+  echo -e "${fg_red}Do not run script as root$fg_reset"
   exit 1
 elif ! type -p systemctl >/dev/null; then
   echo -e "${fg_red}No systemctl found$fg_reset - this program expects systemd"
