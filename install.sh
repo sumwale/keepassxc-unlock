@@ -151,7 +151,7 @@ for file in $doc_files; do
   $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
 done
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
-    install -CD -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
+    sudo install -CD -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
 reset_tmp
 
 # upgrade obsolete configuration files after user confirmation
