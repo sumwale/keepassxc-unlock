@@ -4,6 +4,7 @@
 #include <glib.h>
 #include <glob.h>
 #include <pwd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 
@@ -106,39 +107,51 @@ static bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar 
   }
 }
 
-/// @brief Get the executable's SHA-512 hash from /proc/<pid>/exe and compare against the recorded
-///        good checksum.
+/// @brief Get the executable's SHA-512 hash or PATH+ownership from /proc/<pid>/exe and compare
+///        against the recorded good checksum or PATH+ownership.
 /// @param session_conn the `GBusConnection` object for the user's session D-Bus
 /// @param user_conf_dir user's configuration directory (`/etc/keepassxc-unlock/<uid>`)
 /// @param kp_pid process ID of KeePassXC
-/// @return `true` if the checksum matched else `false`
-static bool verify_process_exe_sha512(
+/// @return `true` if the checksum or PATH+ownership matched else `false`
+static bool verify_process_exe_rcd(
     GDBusConnection *session_conn, const char *user_conf_dir, guint32 kp_pid) {
   // get the executable's SHA-512 hash from /proc/<pid>/exe and compare against the
   // recorded good checksum
-  char kp_sha512_file[128], expected_sha512[256], kp_exe[128];
-  snprintf(kp_sha512_file, sizeof(kp_sha512_file), "%s/keepassxc.sha512", user_conf_dir);
-  FILE *file = fopen(kp_sha512_file, "r");
-  if (!file) {
-    g_warning(
-        "Skipping unlock due to missing %s - run 'sudo keepassxc-unlock-setup'", kp_sha512_file);
+  char kp_rcd_file[128], kp_exe[128];
+  // check obsolete SHA-512 file
+  snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.sha512", user_conf_dir);
+  if (access(kp_rcd_file, F_OK) != 0) {
+    // check obsolete SHA-512 file
+    snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.rcd", user_conf_dir);
+  }
+  g_autofree gchar *expected_rcd = NULL;
+  if (!g_file_get_contents(kp_rcd_file, &expected_rcd, NULL, NULL)) {
+    g_warning("Failed unlock due to unreadable %s - run 'sudo keepassxc-unlock-setup'", kp_rcd_file);
     return false;
   }
   snprintf(kp_exe, sizeof(kp_exe), "/proc/%u/exe", kp_pid);
-  g_autofree const gchar *current_sha512 = sha512sum(kp_exe);
-  // use `fgets()` to read the sha512 file which is expected to have only one line
-  // and replace terminating newline using `strcspn` (which works even if there was no newline)
-  bool mismatch = !current_sha512 || !fgets(expected_sha512, sizeof(expected_sha512), file) ||
-                  (expected_sha512[strcspn(expected_sha512, "\n")] = '\0',
-                      strcmp(current_sha512, expected_sha512) != 0);
-  fclose(file);
-  if (mismatch) {
-    // `kp_exe_full` stores the actual executable that /proc/<pid>/exe points to, while
-    // `kp_exe_real` will either point to it or /proc/<pid>/exe in case read link was unsuccessful
-    g_autofree const gchar *kp_exe_full = g_file_read_link(kp_exe, NULL);
-    const gchar *kp_exe_real = kp_exe_full ? kp_exe_full : kp_exe;
-    g_critical("Aborting unlock due to checksum mismatch in keepassxc (PID %u EXE %s)", kp_pid,
-        kp_exe_real);
+  // `kp_exe_full` stores the actual executable that /proc/<pid>/exe points to, while
+  // `kp_exe_real` will either point to it or /proc/<pid>/exe in case read link was unsuccessful
+  g_autofree const gchar *kp_exe_full = g_file_read_link(kp_exe, NULL);
+  const gchar *kp_exe_real = kp_exe_full ? kp_exe_full : kp_exe;
+  g_autofree const gchar *current_rcd = NULL;
+  const char *check_type;
+  if (g_str_has_prefix(expected_rcd, "path=")) {
+    struct stat info;
+    if (stat(kp_exe, &info) != 0) {
+      g_critical("Failed to determine ownership of the KeePassXC executable: %s", STR_ERROR);
+      return false;
+    }
+    current_rcd =
+        g_strdup_printf("path=%s\nownership=%u:%u", kp_exe_real, info.st_uid, info.st_gid);
+    check_type = "PATH+ownership";
+  } else {
+    current_rcd = sha512sum(kp_exe);
+    check_type = "checksum";
+  }
+  if (g_strcmp0(current_rcd, expected_rcd) != 0) {
+    g_critical("Aborting unlock due to %s mismatch in keepassxc (PID %u EXE %s)", check_type,
+        kp_pid, kp_exe_real);
     g_autofree const gchar *notify_body = g_strdup_printf(
         "If KeePassXC has been updated, then run \"sudo keepassxc-unlock-setup ...\" for one of "
         "the KDBX databases.\nOtherwise this could be an unknown process snooping on D-Bus.\n\n "
@@ -212,7 +225,7 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
   // verify the KeePassXC executable's checksum
   char user_conf_dir[100];
   snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%u", KP_CONFIG_DIR, session_data->user_id);
-  if (!verify_process_exe_sha512(session_conn, user_conf_dir, kp_pid)) return false;
+  if (!verify_process_exe_rcd(session_conn, user_conf_dir, kp_pid)) return false;
 
   char conf_pattern[128], decrypted_passwd[MAX_PASSWORD_SIZE];
   snprintf(conf_pattern, sizeof(conf_pattern), "%s/" KP_CONFIG_PREFIX "*.conf", user_conf_dir);

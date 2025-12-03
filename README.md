@@ -23,8 +23,8 @@ decryption facility using a combination of locally stored system key and a key i
 The second important idea is that all the database unlock operations are carried out by
 a root owned systemd service itself and not by any other user process that can bring
 about needless complications on the trustworthiness of the other process. In addition,
-the SHA512 checksum of the keepassxc executable is verified before making the unlock
-D-Bus calls to verify that no other process is listening on.
+the SHA512 checksum of the keepassxc executable (or its PATH and ownership) is verified
+before making the unlock D-Bus calls to verify that no other process is listening on.
 
 The global service just starts this user-specific systemd service after a successful
 authentication by watching the system D-Bus events, and the service takes over
@@ -158,7 +158,7 @@ Enter the key file for the database (empty for none, use <TAB> for file name com
 
 The setup will warn if TPM2 support cannot be detected and, if possible, provide helpful
 suggestions. Further it will test these parameters for user confirmation and also
-register the keepassxc binary SHA512 checksum which is verified later before
+register the keepassxc binary SHA512 checksum or PATH+owership which is verified later before
 auto-unlocking by the system service.
 
 That's it. Just logout then login again, and all the KeePassXC databases registered

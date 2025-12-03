@@ -37,7 +37,7 @@ reset_tmp() {
     if [[ -d "$tmp_dir" ]]; then
         rm -rf "$tmp_dir"
     fi
-    tmp_dir="$(mktemp -d)"
+    tmp_dir=$(mktemp -d)
 }
 
 # ensure that system PATHs are always searched first
@@ -81,7 +81,7 @@ if [[ "$1" == "--build" ]]; then
   echo -e "${fg_cyan}Building the latest git code from source...$fg_reset"
   # first get version.sh
   $get_cmd "$tmp_dir/version.sh" "$base_url/version.sh?raw=true"
-  product_version="$(bash "$tmp_dir/version.sh" --remote)"
+  product_version=$(bash "$tmp_dir/version.sh" --remote)
   rm -f "$tmp_dir/version.sh"
   for file in $src_files; do
     $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
@@ -121,7 +121,7 @@ else
   while IFS= read -r -d $'\0' file; do
     chmod 0755 "$file"
     if [[ -L "$file" ]]; then
-      target="$(readlink "$file")"
+      target=$(readlink "$file")
       rm -f "$file"
       ln -s "${target%"$static_suffix"}" "${file%"$static_suffix"}"
     else

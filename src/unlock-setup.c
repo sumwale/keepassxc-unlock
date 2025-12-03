@@ -109,14 +109,14 @@ static void wait_for_enter() {
 
 /// @brief Search for the session D-Bus, communicate with KeePassXC process on the bus, then try
 ///        unlocking the database with given password and key file, and record the SHA-512 checksum
-///        of the keepassxc process after user confirmation.
+///        or PATH+ownership of the keepassxc process after user confirmation.
 /// @param user_id the numeric ID of the user
 /// @param kdbx_file path of the KDBX database file
 /// @param password the password (in plain-text) to unlock the database
 /// @param key_file path of the key file required to unlock the database, can be empty
-/// @return the SHA-512 hash of the keepassxc executable verified by the user as being the correct
-///         one, or NULL on error; must be released with `g_free()` after use
-static gchar *verify_and_compute_checksum(
+/// @return the SHA-512 hash or PATH+ownership of the keepassxc executable verified by the user as
+///         being the correct one, or NULL on error; must be released with `g_free()` after use
+static gchar *verify_and_record_executable(
     uid_t user_id, const char *kdbx_file, const char *password, const char *key_file) {
   // determine the `DBUS_SESSION_BUS_ADDRESS` by searching process environments in user sessions
   g_autoptr(GDBusConnection) system_conn = dbus_connect(true, true);
@@ -162,7 +162,7 @@ static gchar *verify_and_compute_checksum(
           "database '%s'\nHit <Enter> to continue.",
       kdbx_file);
 
-  gchar *kp_sha512 = NULL;
+  gchar *kp_rcd = NULL;
   for (int i = 0; i < MAX_TRIES; i++) {
     wait_for_enter();
     // get the keepassxc process ID using the D-Bus API
@@ -200,12 +200,30 @@ static gchar *verify_and_compute_checksum(
       g_printerr("Some error with the given parameters, please register again\n");
       return NULL;
     }
-    if ((kp_sha512 = sha512sum(kp_exe)) != NULL) break;
+
+    g_print("\nAuto-unlock can either use KeePassXC checksum for verification before unlocking "
+            "or only its path and ownership. Answer with a 'y' here only if you are sure that "
+            "checking just the path and ownership is enough for your setup.\n"
+            "Use only path and ownership for verification? (y/N) ");
+    fflush(stdout);
+    g_autofree char *response2 = NULL;
+    sz = 0;
+    if (getline(&response2, &sz, stdin) < 2 || tolower(*response2) != 'y') {
+      kp_rcd = sha512sum(kp_exe);
+    } else {
+      struct stat info;
+      if (stat(kp_exe, &info) != 0) {
+        g_printerr("Failed to determine ownership of the KeePassXC executable: %s", STR_ERROR);
+        return NULL;
+      }
+      kp_rcd = g_strdup_printf("path=%s\nownership=%u:%u", kp_exe_real, info.st_uid, info.st_gid);
+    }
+    if (kp_rcd != NULL) break;
   }
-  if (!kp_sha512) {
+  if (!kp_rcd) {
     g_printerr("Maximum tries exhausted. Unable to register a valid instance of KeePassXC.\n");
   }
-  return kp_sha512;
+  return kp_rcd;
 }
 
 /// @brief Encrypt the password using systemd-creds and append it to the configuration file.
@@ -381,12 +399,15 @@ int main_setup(int argc, char *argv[]) {
   }
 
   // setup configuration path variables
-  char user_conf_dir[100], conf_file[200], kp_sha512_file[128];
+  char user_conf_dir[100], conf_file[200], kp_rcd_file[128];
   snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%u", KP_CONFIG_DIR, user_id);
   g_autofree gchar *conf_name = g_compute_checksum_for_string(G_CHECKSUM_SHA256, kdbx_file, -1);
   snprintf(
       conf_file, sizeof(conf_file), "%s/" KP_CONFIG_PREFIX "%s.conf", user_conf_dir, conf_name);
-  snprintf(kp_sha512_file, sizeof(kp_sha512_file), "%s/keepassxc.sha512", user_conf_dir);
+  // delete obsolete keepassxc.sha512 file
+  snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.sha512", user_conf_dir);
+  unlink(kp_rcd_file);
+  snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.rcd", user_conf_dir);
 
   // create configuration directory
   if (g_mkdir_with_parents(user_conf_dir, 0700) != 0) {
@@ -404,7 +425,7 @@ int main_setup(int argc, char *argv[]) {
     g_autofree char *response = NULL;
     size_t sz = 0;
     if (getline(&response, &sz, stdin) < 2 || tolower(*response) != 'y') {
-      // continue and update the SHA-512 of the executable, so read the existing values
+      // continue and update the executable information, so read the existing values
       g_autofree gchar *recorded_kdbx_file = NULL;
       int passwd_start_line = read_configuration_file(conf_file, &recorded_kdbx_file, &key_file);
       if (passwd_start_line == -1) return 1;
@@ -429,8 +450,8 @@ int main_setup(int argc, char *argv[]) {
     if ((key_file = read_key_file_path()) == NULL) return 1;
   }
 
-  g_autofree gchar *kp_sha512 = verify_and_compute_checksum(user_id, kdbx_file, password, key_file);
-  if (!kp_sha512) return 1;
+  g_autofree gchar *kp_rcd = verify_and_record_executable(user_id, kdbx_file, password, key_file);
+  if (!kp_rcd) return 1;
 
   if (!use_existing_conf) {
     // write the configuration file
@@ -444,8 +465,8 @@ int main_setup(int argc, char *argv[]) {
   // write the checksum file
   g_autoptr(GError) error = NULL;
   if (!g_file_set_contents_full(
-          kp_sha512_file, kp_sha512, -1, G_FILE_SET_CONTENTS_CONSISTENT, 0400, &error)) {
-    g_printerr("Failed to write SHA-512 checksum to '%s': %s\nPlease try again\n", kp_sha512_file,
+          kp_rcd_file, kp_rcd, -1, G_FILE_SET_CONTENTS_CONSISTENT, 0400, &error)) {
+    g_printerr("Failed to write checksum/PATH+ownership to '%s': %s\nPlease try again\n", kp_rcd_file,
         error ? error->message : "(null)");
     if (!use_existing_conf) unlink(conf_file);
     return 1;
