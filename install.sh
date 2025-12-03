@@ -33,11 +33,15 @@ base_release_url="$git_site/releases/latest/download"
 # GPG key used for signing the release tarballs
 gpg_key_id=C9C718FF0C9D3AA4B54E18D93FD1139880CD9DB7
 
-reset_tmp() {
-    if [[ -d "$tmp_dir" ]]; then
-        rm -rf "$tmp_dir"
-    fi
-    tmp_dir=$(mktemp -d)
+function clean_tmp() {
+  if [[ -d "$tmp_dir" ]]; then
+    rm -rf "$tmp_dir"
+  fi
+}
+
+function reset_tmp() {
+  clean_tmp
+  tmp_dir=$(mktemp -d)
 }
 
 # ensure that system PATHs are always searched first
@@ -119,12 +123,12 @@ else
   rm -f "$tmp_dir/$tarball" "$tmp_dir/$tarball.sig"
   static_suffix="-$(uname -m)-static"
   while IFS= read -r -d $'\0' file; do
-    chmod 0755 "$file"
     if [[ -L "$file" ]]; then
       target=$(readlink "$file")
       rm -f "$file"
       ln -s "${target%"$static_suffix"}" "${file%"$static_suffix"}"
     else
+      chmod 0755 "$file"
       mv "$file" "${file%"$static_suffix"}"
     fi
   done < <(find "$tmp_dir" -maxdepth 1 -mindepth 1 -name "*$static_suffix" -print0)
@@ -136,8 +140,10 @@ find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f \
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f -delete
 
 echo -e "${fg_orange}Installing binaries in /usr/local/sbin$fg_reset"
-find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
-    sudo install -Ct /usr/local/sbin -m 0750 -o root -g root '{}' +
+while IFS= read -r -d $'\0' sbin_exec; do
+  sudo rm -f "/usr/local/sbin/$(basename "$sbin_exec")"
+  sudo cp -d --preserve=mode,timestamps "$sbin_exec" /usr/local/sbin/.
+done < <(find "$tmp_dir" -maxdepth 1 -mindepth 1 -print0)
 reset_tmp
 
 echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
@@ -152,7 +158,7 @@ for file in $doc_files; do
 done
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
     sudo install -CD -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
-reset_tmp
+clean_tmp
 
 # upgrade obsolete configuration files after user confirmation
 while IFS= read -r -d $'\0' old_conf; do
