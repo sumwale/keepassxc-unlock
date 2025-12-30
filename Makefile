@@ -3,7 +3,9 @@ SHELL = /bin/bash
 SRC_DIR = src
 BUILD_DIR := $(shell realpath ./build)
 SYSTEMD_DIR = systemd
+INSTALL_ROOT =
 INSTALL_BIN_DIR = /usr/local/sbin
+INSTALL_SERVICE_DIR = /usr/lib/systemd/system
 PRODUCT_VERSION := $(shell bash ./version.sh)
 DEFAULT_PLATFORMS = linux/x86_64 linux/aarch64
 

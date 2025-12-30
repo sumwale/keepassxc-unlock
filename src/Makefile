@@ -68,7 +68,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 install: $(TARGETS)
-	install -m 0755 $(TARGETS) $(INSTALL_BIN_DIR)/
+	install -m 0755 $(TARGETS) $(INSTALL_ROOT)/$(INSTALL_BIN_DIR)/
 
 uninstall:
 	for target in $(TARGETS); do \

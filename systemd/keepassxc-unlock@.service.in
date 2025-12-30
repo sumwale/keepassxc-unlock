@@ -7,7 +7,7 @@ After=graphical.target
 Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/sbin
 EnvironmentFile=/etc/keepassxc-unlock/%i/session.env
 Restart=on-failure
-ExecStart=/usr/local/sbin/keepassxc-unlock %i $SESSION_PATH
+ExecStart=KEEPASSXC_UNLOCK_BIN %i $SESSION_PATH
 
 LockPersonality=true
 MemoryDenyWriteExecute=yes
