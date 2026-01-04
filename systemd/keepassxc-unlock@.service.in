@@ -1,12 +1,13 @@
 [Unit]
-Description=Monitor logins to start KeePassXC auto-unlock
-Wants=display-manager.service
-After=display-manager.service
+Description=Auto-unlock registered KeePassXC databases
+Wants=graphical.target
+After=graphical.target
 
 [Service]
 Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/sbin
+EnvironmentFile=/etc/keepassxc-unlock/%i/session.env
 Restart=on-failure
-ExecStart=/usr/local/sbin/keepassxc-login-monitor
+ExecStart=INSTALL_BIN_DIR/keepassxc-unlock %i $SESSION_PATH
 
 LockPersonality=true
 MemoryDenyWriteExecute=yes
@@ -20,7 +21,7 @@ ProtectHostname=yes
 ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
-ProtectSystem=yes
+ProtectSystem=full
 RestrictAddressFamilies=AF_UNIX AF_NETLINK
 RestrictNamespaces=yes
 RestrictRealtime=yes
@@ -28,6 +29,3 @@ RestrictSUIDSGID=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
-
-[Install]
-WantedBy=graphical.target
