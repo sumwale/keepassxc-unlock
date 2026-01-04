@@ -6,9 +6,11 @@ LOGIN_SERVICE = keepassxc-login-monitor.service
 SERVICES := $(LOGIN_SERVICE) keepassxc-unlock@.service
 
 install:
-	$(M4) -DKEEPASSXC_LOGIN_MONITOR_BIN=$(INSTALL_BIN_DIR)/keepassxc-login-monitor keepassxc-login-monitor.service.in > $(BUILD_DIR)/keepassxc-login-monitor.service
-	$(M4) -DKEEPASSXC_UNLOCK_BIN=$(INSTALL_BIN_DIR)/keepassxc-unlock keepassxc-unlock@.service.in > $(BUILD_DIR)/keepassxc-unlock@.service
-	install -m 0644 $(BUILD_DIR)/*.service $(INSTALL_ROOT)/$(INSTALL_SERVICE_DIR)
+	[ $(PKG_INSTALL) = "true" ] || systemctl stop $(LOGIN_SERVICE) 2>/dev/null || /bin/true
+	$(M4) -DINSTALL_BIN_DIR=$(INSTALL_BIN_DIR) keepassxc-login-monitor.service.in > $(BUILD_DIR)/keepassxc-login-monitor.service
+	$(M4) -DINSTALL_BIN_DIR=$(INSTALL_BIN_DIR) keepassxc-unlock@.service.in > $(BUILD_DIR)/keepassxc-unlock@.service
+	install -m 0644 $(BUILD_DIR)/*.service $(INSTALL_SERVICE_DIR)
+	[ $(PKG_INSTALL) = "true" ] || systemctl daemon-reload
 
 uninstall:
 	for unit in `systemctl -q list-units 'keepassxc-unlock@*.service' | awk '{ print $$1 }'`; do \

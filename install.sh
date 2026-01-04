@@ -135,8 +135,8 @@ else
 fi
 
 echo -e "${fg_orange}Installing systemd service files in /etc/systemd/system$fg_reset"
-m4 -DKEEPASSXC_LOGIN_MONITOR_BIN=/usr/local/sbin/keepassxc-login-monitor "$tmp_dir/systemd/keepassxc-login-monitor.service.in" > "$tmp_dir/systemd/keepassxc-login-monitor.service"
-m4 -DKEEPASSXC_UNLOCK_BIN=/usr/local/sbin/keepassxc-unlock "$tmp_dir/systemd/keepassxc-unlock@.service.in" > "$tmp_dir/systemd/keepassxc-unlock@.service"
+m4 -DINSTALL_BIN_DIR=/usr/local/sbin "$tmp_dir/systemd/keepassxc-login-monitor.service.in" > "$tmp_dir/systemd/keepassxc-login-monitor.service"
+m4 -DINSTALL_BIN_DIR=/usr/local/sbin "$tmp_dir/systemd/keepassxc-unlock@.service.in" > "$tmp_dir/systemd/keepassxc-unlock@.service"
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f \
     -exec sudo install -Ct /etc/systemd/system -m 0644 -o root -g root '{}' +
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f -delete

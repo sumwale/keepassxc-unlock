@@ -6,7 +6,7 @@ After=display-manager.service
 [Service]
 Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/sbin
 Restart=on-failure
-ExecStart=KEEPASSXC_LOGIN_MONITOR_BIN
+ExecStart=INSTALL_BIN_DIR/keepassxc-login-monitor
 
 LockPersonality=true
 MemoryDenyWriteExecute=yes

@@ -72,5 +72,5 @@ install: $(TARGETS)
 
 uninstall:
 	for target in $(TARGETS); do \
-		rm -f $(INSTALL_BIN_DIR)/`basename $${target}`; \
+		rm -f $(INSTALL_ROOT)/$(INSTALL_BIN_DIR)/`basename $${target}`; \
 	done
