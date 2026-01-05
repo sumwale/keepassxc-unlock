@@ -2,6 +2,10 @@
 
 M4 = m4
 
+INSTALL_BIN_DIR = /usr/local/sbin
+INSTALL_SERVICE_DIR = /etc/systemd/system
+PKG_INSTALL = false
+
 LOGIN_SERVICE = keepassxc-login-monitor.service
 SERVICES := $(LOGIN_SERVICE) keepassxc-unlock@.service
 
