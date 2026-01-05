@@ -37,13 +37,16 @@ all: $(TARGETS)
 all-static: $(MULTICALL_STATIC) $(TARGETS_STATIC)
 
 $(BUILD_DIR)/%.o: %.c common.h
-	$(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -c -o $@ $<
+	@echo Compiling `basename $@`
+	@$(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -c -o $@ $<
 
 $(TARGETS): $(BUILD_DIR)/keepassxc-%: $(BUILD_DIR)/%.o $(BUILD_DIR)/%-main.o $(BUILD_DIR)/common.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	@echo Linking `basename $@`
+	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(MULTICALL_STATIC): $(TARGET_OBJS) $(BUILD_DIR)/common.o $(BUILD_DIR)/multi-call.o
-	$(CC) -static $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) $(STATIC_LIBS)
+	@echo Statically linking `basename $@`
+	@$(CC) -static $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) $(STATIC_LIBS)
 
 $(TARGETS_STATIC): $(MULTICALL_STATIC)
 	for target in $(TARGETS_STATIC); do \
