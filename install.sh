@@ -82,7 +82,7 @@ trap "/bin/rm -rf '$tmp_dir'" 0 1 2 3 4 5 6 11 12 15
 echo -e "${fg_orange}Stopping login monitor service$fg_reset"
 sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || true
 if [[ "$1" == "--build" ]]; then
-  echo -e "${fg_orange}Fetching the latest source code from git...$fg_reset"
+  echo -e "${fg_orange}Fetching the latest source code...$fg_reset"
   # first get version.sh
   $get_cmd "$tmp_dir/version.sh" "$base_url/version.sh?raw=true"
   product_version=$(bash "$tmp_dir/version.sh" --remote)
