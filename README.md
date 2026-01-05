@@ -130,10 +130,10 @@ OR
 wget -qO- "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash /dev/stdin --build
 ```
 
-This requires `gcc`, `make`, and development headers for `glibc`, `glib`, `readline`.
+This requires `gcc`, `make`, `m4` and development headers for `glibc`, `glib`, `readline`.
 As an example, for Debian/Ubuntu based systems, these dependencies can be installed with:
-`sudo apt install build-essential libglib2.0-dev libreadline-dev` or on Fedora/RHEL based
-systems with: `sudo dnf install gcc make glib2-devel readline-devel`.
+`sudo apt install build-essential m4 libglib2.0-dev libreadline-dev` or on Fedora/RHEL
+based systems with: `sudo dnf install gcc make m4 glib2-devel readline-devel`.
 
 
 ## Configuration

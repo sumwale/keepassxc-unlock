@@ -20,8 +20,8 @@ src_files="
     src/Makefile
 "
 service_files="
-    systemd/keepassxc-login-monitor.service
-    systemd/keepassxc-unlock@.service
+    systemd/keepassxc-login-monitor.service.in
+    systemd/keepassxc-unlock@.service.in
 "
 doc_files="
     README.md
@@ -82,7 +82,7 @@ trap "/bin/rm -rf '$tmp_dir'" 0 1 2 3 4 5 6 11 12 15
 echo -e "${fg_orange}Stopping login monitor service$fg_reset"
 sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || true
 if [[ "$1" == "--build" ]]; then
-  echo -e "${fg_cyan}Building the latest git code from source...$fg_reset"
+  echo -e "${fg_orange}Fetching the latest source code from git...$fg_reset"
   # first get version.sh
   $get_cmd "$tmp_dir/version.sh" "$base_url/version.sh?raw=true"
   product_version=$(bash "$tmp_dir/version.sh" --remote)
@@ -90,14 +90,19 @@ if [[ "$1" == "--build" ]]; then
   for file in $src_files; do
     $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
   done
+  echo -e "${fg_cyan}Building the source code...$fg_reset"
   make -C "$tmp_dir" "PRODUCT_VERSION=$product_version" "BUILD_DIR=$tmp_dir"
   for file in $src_files; do
     rm -f "$tmp_dir/$(basename "$file")"
   done
   find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.o' -type f -delete
+  find "$tmp_dir" -maxdepth 1 -mindepth 1 -type f -exec chmod 0755 '{}' +
   echo -e "${fg_orange}Fetching systemd service files$fg_reset"
   for file in $service_files; do
-    $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
+    out_file="$tmp_dir/$(basename "$file")"
+    $get_cmd "$out_file" "$base_url/$file?raw=true"
+    m4 -DINSTALL_BIN_DIR=/usr/local/sbin "$out_file" > "${out_file%.in}"
+    rm -f "$out_file"
   done
 else
   echo -e "${fg_orange}Fetching tarball having executables and systemd service files$fg_reset"
@@ -135,8 +140,6 @@ else
 fi
 
 echo -e "${fg_orange}Installing systemd service files in /etc/systemd/system$fg_reset"
-m4 -DINSTALL_BIN_DIR=/usr/local/sbin "$tmp_dir/systemd/keepassxc-login-monitor.service.in" > "$tmp_dir/systemd/keepassxc-login-monitor.service"
-m4 -DINSTALL_BIN_DIR=/usr/local/sbin "$tmp_dir/systemd/keepassxc-unlock@.service.in" > "$tmp_dir/systemd/keepassxc-unlock@.service"
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f \
     -exec sudo install -Ct /etc/systemd/system -m 0644 -o root -g root '{}' +
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -name '*.service' -type f -delete
