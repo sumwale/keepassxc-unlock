@@ -37,7 +37,6 @@ all: $(TARGETS)
 all-static: $(MULTICALL_STATIC) $(TARGETS_STATIC)
 
 $(BUILD_DIR)/%.o: %.c common.h
-	mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -c -o $@ $<
 
 $(TARGETS): $(BUILD_DIR)/keepassxc-%: $(BUILD_DIR)/%.o $(BUILD_DIR)/%-main.o $(BUILD_DIR)/common.o
@@ -53,7 +52,6 @@ $(TARGETS_STATIC): $(MULTICALL_STATIC)
 	done
 
 all-static-musl:
-	mkdir -p $(BUILD_DIR)
 	@if type docker >/dev/null 2>/dev/null; then \
 		container_cmd=docker; \
 	else \
@@ -65,12 +63,14 @@ all-static-musl:
 	done
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -f $(TARGETS)
+	rm -f $(BUILD_DIR)/*.o $(BUILD_DIR)/*-static
 
 install: $(TARGETS)
+	[ -e $(INSTALL_ROOT)/$(INSTALL_BIN_DIR) ] || mkdir -p $(INSTALL_ROOT)/$(INSTALL_BIN_DIR)
 	install -m 0755 $(TARGETS) $(INSTALL_ROOT)/$(INSTALL_BIN_DIR)/
 
 uninstall:
-	for target in $(TARGETS); do \
-		rm -f $(INSTALL_ROOT)/$(INSTALL_BIN_DIR)/`basename $${target}`; \
+	for target in $(TARGET_NAMES); do \
+		rm -f $(INSTALL_ROOT)/$(INSTALL_BIN_DIR)/$${target}; \
 	done
