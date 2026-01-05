@@ -1,13 +1,21 @@
 .PHONY: install uninstall
 
+M4 = m4
+
+INSTALL_BIN_DIR = /usr/local/sbin
+INSTALL_SERVICE_DIR = /etc/systemd/system
+PKG_INSTALL = false
+
 LOGIN_SERVICE = keepassxc-login-monitor.service
 SERVICES := $(LOGIN_SERVICE) keepassxc-unlock@.service
 
 install:
-	systemctl stop $(LOGIN_SERVICE) 2>/dev/null || /bin/true
-	install -m 0644 $(SERVICES) /etc/systemd/system/
-	systemctl daemon-reload
-	systemctl enable --now $(LOGIN_SERVICE)
+	[ $(PKG_INSTALL) = "true" ] || systemctl stop $(LOGIN_SERVICE) 2>/dev/null || /bin/true
+	$(M4) -DINSTALL_BIN_DIR=$(INSTALL_BIN_DIR) keepassxc-login-monitor.service.in > $(BUILD_DIR)/keepassxc-login-monitor.service
+	$(M4) -DINSTALL_BIN_DIR=$(INSTALL_BIN_DIR) keepassxc-unlock@.service.in > $(BUILD_DIR)/keepassxc-unlock@.service
+	install -m 0644 $(BUILD_DIR)/*.service $(INSTALL_ROOT)/$(INSTALL_SERVICE_DIR)
+	[ $(PKG_INSTALL) = "true" ] || systemctl daemon-reload
+	[ $(PKG_INSTALL) = "true" ] || systemctl enable --now keepassxc-login-monitor.service
 
 uninstall:
 	for unit in `systemctl -q list-units 'keepassxc-unlock@*.service' | awk '{ print $$1 }'`; do \
