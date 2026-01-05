@@ -60,7 +60,7 @@ all-static-musl:
 		container_cmd=podman; \
 	fi; \
 	for platform in $(PLATFORMS); do \
-		$${container_cmd} run --platform $${platform} --rm -v `pwd`:/keepassxc-unlock/src -v $(BUILD_DIR):/keepassxc-unlock/build -it alpine:latest /bin/sh /keepassxc-unlock/src/make-alpine-musl.sh "$(PRODUCT_VERSION)"; \
+		$${container_cmd} run --platform $${platform} --rm -v `pwd`:/keepassxc-unlock/src -v $(BUILD_DIR):/keepassxc-unlock/build -it alpine:3.22 /bin/sh /keepassxc-unlock/src/make-alpine-musl.sh "$(PRODUCT_VERSION)"; \
 		rm -f $(BUILD_DIR)/*.o; \
 	done
 
