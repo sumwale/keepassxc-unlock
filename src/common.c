@@ -51,6 +51,16 @@ bool user_has_db_configs(guint32 user_id) {
   return has_configs;
 }
 
+gchar *normalize_display_str(const gchar *display) {
+  size_t len = display ? strlen(display) : 0;
+  if (len > 2 && display[len - 1] == '0' && display[len - 2] == '.') {
+    return g_strndup(display, len - 2);
+  } else {
+    return g_strndup(display, len);
+  }
+}
+
+
 int session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_path,
     guint32 check_uid, guint32 *out_uid_ptr, bool *is_wayland_ptr, gchar **display_ptr,
     gchar **scope_ptr) {
@@ -86,7 +96,11 @@ int session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_
         user_match = false;
       }
     } else if (g_strcmp0(key, "Display") == 0) {
-      if (display_ptr) g_variant_get(value, "s", display_ptr);
+      if (display_ptr) {
+        gchar *display = NULL;
+        g_variant_get(value, "&s", &display);
+        *display_ptr = normalize_display_str(display);
+      }
     } else if (g_strcmp0(key, "Remote") == 0) {
       is_remote = g_variant_get_boolean(value);
     } else if (g_strcmp0(key, "Scope") == 0) {

@@ -62,6 +62,14 @@ extern GDBusConnection *dbus_session_connect(uid_t user_id, bool log_error);
 /// @return `true` if user has at least one KDBX database configured for auto-unlock else `false`
 extern bool user_has_db_configs(guint32 user_id);
 
+/// @brief Normalize $DISPLAY string by removing trailing `.0` if any
+///        (see https://github.com/sumwale/keepassxc-unlock/issues/10).
+///        This function is not performance sensitive so always allocates a new copy.
+/// @param display the value of $DISPLAY variable or retrieved from session
+/// @return if `display` ends with `.0`, then a new string that should be released using `g_free()`
+///         else a copy of the `display` argument that should be released using `g_free()`
+extern gchar *normalize_display_str(const gchar *display);
+
 /// @brief Check if auto-unlock should be attempted for a session with given path
 ///        (of the form `/org/freedesktop/login1/session/...`). The checks performed include
 ///        the type which must be `x11` or `wayland`, should be active and should not be remote.

@@ -97,8 +97,9 @@ static bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar 
   } else {
     g_autofree const gchar *env_value = get_process_env_var(kp_pid, "DISPLAY");
     if (display && *display != '\0') {
+      g_autofree const gchar *env_display = normalize_display_str(env_value);
       // when set, the value of $DISPLAY should match the passed `Display` session property
-      return g_strcmp0(env_value, display) == 0;
+      return g_strcmp0(env_display, display) == 0;
     } else {
       // just check non-null value since `Display` session property may not be set
       // if the display manager that launched the session is running in Wayland mode
@@ -126,7 +127,8 @@ static bool verify_process_exe_rcd(
   }
   g_autofree gchar *expected_rcd = NULL;
   if (!g_file_get_contents(kp_rcd_file, &expected_rcd, NULL, NULL)) {
-    g_warning("Failed unlock due to unreadable %s - run 'sudo keepassxc-unlock-setup'", kp_rcd_file);
+    g_warning(
+        "Failed unlock due to unreadable %s - run 'sudo keepassxc-unlock-setup'", kp_rcd_file);
     return false;
   }
   snprintf(kp_exe, sizeof(kp_exe), "/proc/%u/exe", kp_pid);
