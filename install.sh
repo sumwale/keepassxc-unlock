@@ -182,7 +182,7 @@ while IFS= read -r -d $'\0' old_conf; do
       fi
     fi
   fi
-done < <(sudo find /etc/keepassxc-unlock -maxdepth 2 -mindepth 2 -name '*.conf' -print0)
+done < <(sudo find /etc/keepassxc-unlock -maxdepth 2 -mindepth 2 -name '*.conf' -print0 2>/dev/null)
 
 echo
 echo -e "${fg_orange}Start user-specific auto-unlock service? This will only work if"
