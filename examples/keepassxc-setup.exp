@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+
+# This example expect script can be used to run keepassxc-unlock-setup non-interactively
+# piping the database password at stdin. For example, the password can be in a gpg
+# encrypted file, so one can decrypt it and pipe to this script. It needs three arguments
+# namely the user login, path to KDBX database file and path to key file for the database
+# (or empty string if no key file has been setup for the database):
+# gpg --quiet --decrypt ... | sudo /path/to/this/script <user login> <KDBX file> <key file>
+
+set timeout 30
+set unlock_args [lrange $argv 0 1]
+set keyfile [lindex $argv 2]
+set password [gets stdin]
+
+spawn keepassxc-unlock-setup {*}$unlock_args
+expect {
+  "Overwrite existing configuration" { send "y\n"; exp_continue }
+  "Enter the password" { send -- "$password\r" }
+}
+expect "Type the password again" { send -- "$password\r" }
+expect "Enter the key file for the database" { send -- "$keyfile\n" }
+expect "Verifying the given parameters. Please ensure KeePassXC is running" { send "\n" }
+expect "Will try to unlock the database for process with ID" { send "\n" }
+expect "Was the database unlocked" { send "y\n" }
+expect "Auto-unlock can either use KeePassXC checksum for verification" { send "n\n" }
+expect eof
