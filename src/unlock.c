@@ -391,12 +391,25 @@ int main_unlock(int argc, char *argv[]) {
   g_autoptr(GDBusConnection) system_conn = dbus_connect(true, true);
   if (!system_conn) return 1;
 
-  // get the session `Type`, `Display` and `Scope` properties
+  // get the session `Type`, `Display` and `Scope` properties; retry for up to 10s because
+  // on GNOME/GDM the login monitor fires while the session is still in State=opening (the
+  // GDM-to-compositor handoff), and the session only becomes fully valid a moment later.
+  // this service has no running main loop yet so an event-driven wait is not possible here;
+  // a bounded startup retry is the correct approach for this one-shot validation.
   g_autofree gchar *display = NULL;
   g_autofree gchar *scope = NULL;
   bool is_wayland = false;
-  if (session_valid_for_unlock(
-          system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope) != 1) {
+  int session_valid = 0;
+  for (int i = 0; i < 10; i++) {
+    g_free(display); display = NULL;
+    g_free(scope); scope = NULL;
+    is_wayland = false;
+    session_valid = session_valid_for_unlock(
+        system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope);
+    if (session_valid == 1) break;
+    if (i < 9) sleep(1);
+  }
+  if (session_valid != 1) {
     g_warning(
         "No valid X11/Wayland session found for UID=%u in sessionPath='%s'", user_id, session_path);
     return 0;
