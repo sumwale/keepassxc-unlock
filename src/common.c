@@ -81,7 +81,6 @@ int session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_
   g_variant_get(session_props, "(a{sv})", &iter);
 
   bool user_match = false, has_supported_type = false, is_remote = false, is_active = false;
-  bool is_fully_active = false;
   const gchar *key = NULL;
   GVariant *value = NULL;
   while (g_variant_iter_loop(iter, "{&sv}", &key, &value)) {
@@ -113,18 +112,12 @@ int session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_
       if (has_supported_type && is_wayland_ptr) *is_wayland_ptr = is_wayland;
     } else if (g_strcmp0(key, "State") == 0) {
       const char *state = g_variant_get_string(value, NULL);
-      is_fully_active = g_strcmp0(state, "active") == 0;
-      is_active = is_fully_active || g_strcmp0(state, "opening") == 0;
+      is_active = g_strcmp0(state, "active") == 0 || g_strcmp0(state, "opening") == 0;
     }
   }
 
-  // a session is a target for auto-unlock if it is of a supported type, not remote, and active;
-  // a graphical session still in "opening" state returns 2 (subscribe and wait) rather than 1
-  // so the login monitor delays starting the unlock service until the session is fully active
-  if (user_match && !is_remote && is_active) {
-    if (has_supported_type && is_fully_active) return 1;
-    return 2;
-  }
+  // a session is a target for auto-unlock if it is of a supported type, not remote, and active
+  if (user_match && !is_remote && is_active) return has_supported_type ? 1 : 2;
   return 0;
 }
 
