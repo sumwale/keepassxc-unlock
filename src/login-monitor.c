@@ -58,9 +58,20 @@ static void on_session_properties_changed(GDBusConnection *system_conn, const gc
   while (g_variant_iter_loop(iter, "{&sv}", &key, &value)) {
     if (g_strcmp0(key, "Type") == 0) {
       const gchar *type_val = g_variant_get_string(value, NULL);
-      // start auto-unlock service for the session if it's type has switched to a graphical one
+      // start auto-unlock service for the session if its type has switched to a graphical one
       if (g_strcmp0(type_val, "wayland") == 0 || g_strcmp0(type_val, "x11") == 0) {
         tty_session_cleanup(system_conn, session_path, (GHashTable *)user_data, true);
+      }
+    } else if (g_strcmp0(key, "State") == 0) {
+      const gchar *state_val = g_variant_get_string(value, NULL);
+      // start auto-unlock service when a graphical session transitions from "opening" to "active";
+      // on GNOME/GDM new sessions briefly report State=opening before becoming active, so the
+      // login monitor subscribes to wait rather than starting the service immediately
+      if (g_strcmp0(state_val, "active") == 0) {
+        guint32 user_id = 0;
+        if (session_valid_for_unlock(system_conn, session_path, 0, &user_id, NULL, NULL, NULL) == 1) {
+          tty_session_cleanup(system_conn, session_path, (GHashTable *)user_data, true);
+        }
       }
     }
   }
