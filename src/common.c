@@ -151,7 +151,7 @@ gchar *get_process_env_var(guint32 pid, const char *env_var) {
 
 guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const char *dbus_api) {
   g_autoptr(GError) error = NULL;
-  g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, "org.freedesktop.DBus",
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, DBUS_MAIN_OBJECT_NAME,
       "/", DBUS_MAIN_OBJECT_NAME, "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api),
       NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
   if (result) {

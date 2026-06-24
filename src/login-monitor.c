@@ -61,6 +61,7 @@ static void on_session_properties_changed(GDBusConnection *system_conn, const gc
       // start auto-unlock service for the session if it's type has switched to a graphical one
       if (g_strcmp0(type_val, "wayland") == 0 || g_strcmp0(type_val, "x11") == 0) {
         tty_session_cleanup(system_conn, session_path, (GHashTable *)user_data, true);
+        return;
       }
     }
   }
@@ -106,10 +107,10 @@ static void handle_new_session(GDBusConnection *system_conn, const gchar *sender
     SessionData *session_data = g_new(SessionData, 1);
     session_data->user_id = user_id;
     guint props_subscription_id = g_dbus_connection_signal_subscribe(system_conn,
-        LOGIN_OBJECT_NAME,                    // sender
-        "org.freedesktop.DBus.Properties",    // interface
-        "PropertiesChanged",                  // signal name
-        session_path,                         // object path
+        LOGIN_OBJECT_NAME,                      // sender
+        DBUS_MAIN_OBJECT_NAME ".Properties",    // interface
+        "PropertiesChanged",                    // signal name
+        session_path,                           // object path
         NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_session_properties_changed, session_map, NULL);
     session_data->subscription_id = props_subscription_id;
     if (props_subscription_id == 0) {
