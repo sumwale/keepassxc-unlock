@@ -112,7 +112,8 @@ int session_valid_for_unlock(GDBusConnection *system_conn, const gchar *session_
       if (has_supported_type && is_wayland_ptr) *is_wayland_ptr = is_wayland;
     } else if (g_strcmp0(key, "State") == 0) {
       const char *state = g_variant_get_string(value, NULL);
-      is_active = g_strcmp0(state, "active") == 0 || g_strcmp0(state, "opening") == 0;
+      is_active = g_strcmp0(state, "active") == 0 || g_strcmp0(state, "online") == 0 ||
+                  g_strcmp0(state, "opening") == 0;
     }
   }
 
@@ -151,9 +152,9 @@ gchar *get_process_env_var(guint32 pid, const char *env_var) {
 
 guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const char *dbus_api) {
   g_autoptr(GError) error = NULL;
-  g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, DBUS_MAIN_OBJECT_NAME,
-      "/", DBUS_MAIN_OBJECT_NAME, "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api),
-      NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, DBUS_MAIN_OBJECT_NAME, "/",
+      DBUS_MAIN_OBJECT_NAME, "GetConnectionUnixProcessID", g_variant_new("(s)", dbus_api), NULL,
+      G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT, NULL, &error);
   if (result) {
     guint32 pid = 0;
     g_variant_get(result, "(u)", &pid);

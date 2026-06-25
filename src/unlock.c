@@ -16,8 +16,6 @@ typedef struct {
   const gchar *session_path;        // path of the selected session
   GDBusConnection *session_conn;    // the `GBusConnection` object for the user's session D-Bus
   uid_t user_id;                    // numeric ID of the user
-  bool is_wayland;                  // `true` if the session is a Wayland one, `false` for X11
-  const gchar *display;             // the `Display` property of the session
   int session_valid;                // return value of `session_valid_for_unlock`
   bool session_locked;              // holds the previous locked state of the session
   bool session_active;              // holds the previous active state of the session
@@ -212,7 +210,15 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
   }
 
   // verify from the KeePassXC executable's environment that it is running in the selected session
-  if (!verify_process_session(kp_pid, session_data->is_wayland, session_data->display)) {
+  bool is_wayland = false;
+  g_autofree gchar *display = NULL;
+  if (session_valid_for_unlock(system_conn, session_data->session_path, session_data->user_id, NULL,
+          &is_wayland, &display, NULL) != 1) {
+    g_warning("No X11/Wayland session was found for UID=%u in sessionPath='%s'",
+        session_data->user_id, session_data->session_path);
+    return false;
+  }
+  if (!verify_process_session(kp_pid, is_wayland, display)) {
     g_warning("Skipping unlock due to mismatch of $DISPLAY/$WAYLAND_DISPLAY of KeePassXC process "
               "with ID %u against the session properties",
         kp_pid);
@@ -418,13 +424,11 @@ int main_unlock(int argc, char *argv[]) {
   g_autoptr(GDBusConnection) system_conn = dbus_connect(true, true);
   if (!system_conn) return 1;
 
-  // get the session `Type`, `Display` and `Scope` properties
-  g_autofree gchar *display = NULL;
+  // get the session `Scope` property which will not change (while `Type`, `Display` can change)
   g_autofree gchar *scope = NULL;
-  bool is_wayland = false;
   int session_valid;
   if ((session_valid = session_valid_for_unlock(
-           system_conn, session_path, user_id, NULL, &is_wayland, &display, &scope)) == 0) {
+           system_conn, session_path, user_id, NULL, NULL, NULL, &scope)) == 0) {
     g_warning(
         "No valid X11/Wayland session found for UID=%u in sessionPath='%s'", user_id, session_path);
     return 0;
@@ -454,8 +458,8 @@ int main_unlock(int argc, char *argv[]) {
   g_autoptr(GMainLoop) loop = g_main_loop_new(NULL, FALSE);
   // subscribe to `PropertiesChanged` for the screen/session lock/unlock (`LockedHint`)
   // and session active/inactive events
-  MonitoredSession user_data = {loop, session_path, session_conn, user_id, is_wayland, display,
-      session_valid, false, true, 0};
+  MonitoredSession user_data = {
+      loop, session_path, session_conn, user_id, session_valid, false, true, 0};
   guint session_subscription_id = g_dbus_connection_signal_subscribe(system_conn,
       LOGIN_OBJECT_NAME,                      // sender
       DBUS_MAIN_OBJECT_NAME ".Properties",    // interface
@@ -478,6 +482,16 @@ int main_unlock(int argc, char *argv[]) {
     return 1;
   }
 
+  // update session_valid which could have changed while PropertiesChanged monitor was not active
+  if (session_valid != 1) {
+    int new_session_valid =
+        session_valid_for_unlock(system_conn, session_path, user_id, NULL, NULL, NULL, NULL);
+    // unlock the databases only if the PropertiesChanged callback is not attempting the same
+    if (g_atomic_int_compare_and_exchange(
+            &user_data.session_valid, session_valid, new_session_valid)) {
+      session_valid = new_session_valid;
+    }
+  }
   if (session_valid == 1) {
     // unlock on startup since this program should be invoked on user session start
     unlock_databases_on_startup(system_conn, &user_data);
