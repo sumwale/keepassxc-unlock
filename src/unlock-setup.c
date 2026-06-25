@@ -158,6 +158,10 @@ static gchar *verify_and_record_executable(
   setenv("DBUS_SESSION_BUS_ADDRESS", session_dbus_address, 1);
 
   g_autoptr(GDBusConnection) session_conn = dbus_session_connect(user_id, true);
+  if (!session_conn) {
+    g_print("\nUnable to connect to the session D-Bus '%s'!\n", session_dbus_address);
+    return NULL;
+  }
   g_print("\nVerifying the given parameters. Please ensure KeePassXC is running and lock the "
           "database '%s'\nHit <Enter> to continue.",
       kdbx_file);
@@ -466,8 +470,8 @@ int main_setup(int argc, char *argv[]) {
   g_autoptr(GError) error = NULL;
   if (!g_file_set_contents_full(
           kp_rcd_file, kp_rcd, -1, G_FILE_SET_CONTENTS_CONSISTENT, 0400, &error)) {
-    g_printerr("Failed to write checksum/PATH+ownership to '%s': %s\nPlease try again\n", kp_rcd_file,
-        error ? error->message : "(null)");
+    g_printerr("Failed to write checksum/PATH+ownership to '%s': %s\nPlease try again\n",
+        kp_rcd_file, error ? error->message : "(null)");
     if (!use_existing_conf) unlink(conf_file);
     return 1;
   }
