@@ -373,7 +373,12 @@ int main_setup(int argc, char *argv[]) {
   // check for TPM2 support
   const char *key_type = "host+tpm2";
   g_print("Checking TPM2 support\n\n");
-  int exit_code = system("systemd-creds has-tpm2");
+  // for systemd version >= 257 use systemd-analyze else use systemd-creds (github issue #11)
+  const char *has_tpm2_cmd = "systemd-creds has-tpm2";
+  int exit_code = system("[ `systemd-creds --version 2>/dev/null | "
+                         "sed -n -E 's/^systemd ([0-9]+).*/\1/p'` -ge 257 ] 2>/dev/null");
+  if (exit_code == 0) has_tpm2_cmd = "systemd-analyze has-tpm2";
+  exit_code = system(has_tpm2_cmd);
   g_print("\n");
   if (exit_code == 127) {    // shell could not find the command
     g_printerr("systemd-creds absent: minimum version of systemd required is 250\n");
