@@ -375,7 +375,7 @@ int main_setup(int argc, char *argv[]) {
   g_print("Checking TPM2 support\n\n");
   // for systemd version >= 257 use systemd-analyze else use systemd-creds (github issue #11)
   const char *has_tpm2_cmd = "systemd-creds has-tpm2";
-  int exit_code = system("[ `systemd-creds --version 2>/dev/null | "
+  int exit_code = system("[ `systemd-analyze --version 2>/dev/null | "
                          "sed -n -E 's/^systemd ([0-9]+).*/\\1/p'` -ge 257 ] 2>/dev/null");
   if (exit_code == 0) has_tpm2_cmd = "systemd-analyze has-tpm2";
   exit_code = system(has_tpm2_cmd);

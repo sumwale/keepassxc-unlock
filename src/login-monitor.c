@@ -152,6 +152,12 @@ void start_unlock_service(
   char service_name[128];
   snprintf(service_name, sizeof(service_name), "keepassxc-unlock@%u.service", user_id);
   g_autoptr(GError) error = NULL;
+  // first stop any existing service due to unclean session close or similar
+  // (see https://github.com/sumwale/keepassxc-unlock/issues/21)
+  g_autoptr(GVariant) ignore = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
+      "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StopUnit",
+      g_variant_new("(ss)", service_name, "replace"), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
+      NULL, &error);
   // send the `StartUnit` command to start the service (equivalent to `systemctl start ...`)
   g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
       "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StartUnit",
