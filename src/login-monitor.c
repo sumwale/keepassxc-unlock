@@ -158,6 +158,7 @@ void start_unlock_service(
       "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StopUnit",
       g_variant_new("(ss)", service_name, "replace"), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
       NULL, &error);
+  if (error) g_clear_pointer(&error, g_error_free);
   // send the `StartUnit` command to start the service (equivalent to `systemctl start ...`)
   g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
       "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StartUnit",
