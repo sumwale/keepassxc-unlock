@@ -1,6 +1,6 @@
 ## Introduction
 
-This service for KeePassXC or its fork ChiPass allows full passwordless unlocking of registered
+This service for KeePassXC (or its fork ChiPass) allows full passwordless unlocking of registered
 KeepassXC/ChiPass databases after a successful login or screen unlock.
 
 Unlike other solutions, the password does not have to have any relation to the
