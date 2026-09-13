@@ -6,16 +6,17 @@ INSTALL_BIN_DIR = /usr/local/sbin
 INSTALL_SERVICE_DIR = /etc/systemd/system
 PKG_INSTALL = false
 
-LOGIN_SERVICE = keepassxc-login-monitor.service
-SVC_FILENAMES := $(LOGIN_SERVICE) keepassxc-unlock@.service
+LOGIN_SERVICE = $(PRODUCT_LCASE)-login-monitor.service
+SVC_FILENAMES := $(LOGIN_SERVICE) $(PRODUCT_LCASE)-unlock@.service
 SVC_FILES := $(patsubst %,$(BUILD_DIR)/%,$(SVC_FILENAMES))
 
 .PHONY: all clean install uninstall
 
 all: $(SVC_FILES)
 
-$(BUILD_DIR)/%.service: %.service.in
-	$(M4) -DINSTALL_BIN_DIR=$(INSTALL_BIN_DIR) $< > $@
+$(BUILD_DIR)/$(PRODUCT_LCASE)-%.service: keepassxc-%.service.in
+	$(M4) -DINSTALL_BIN_DIR=$(INSTALL_BIN_DIR) -DPRODUCT_LCASE=$(PRODUCT_LCASE) \
+		-DPRODUCT_NAME=$(PRODUCT_NAME) $< > $@
 
 clean:
 	rm -f $(BUILD_DIR)/*.service
@@ -26,12 +27,12 @@ install: $(SVC_FILES)
 	install -m 0644 $(SVC_FILES) $(INSTALL_ROOT)/$(INSTALL_SERVICE_DIR)/
 	if [ "$(PKG_INSTALL)" != "true" ]; then \
 		systemctl daemon-reload; \
-		systemctl enable --now keepassxc-login-monitor.service; \
+		systemctl enable --now $(LOGIN_SERVICE); \
 	fi
 
 uninstall:
 	if [ "$(PKG_INSTALL)" != "true" ]; then \
-		for unit in `systemctl -q list-units 'keepassxc-unlock@*.service' | awk '{ print $$1 }'`; do \
+		for unit in `systemctl -q list-units "$(PRODUCT_LCASE)-unlock@*.service" | awk '{ print $$1 }'`; do \
 			systemctl stop "$$unit" 2>/dev/null || /bin/true; \
 		done; \
 		systemctl stop $(LOGIN_SERVICE) 2>/dev/null || /bin/true; \

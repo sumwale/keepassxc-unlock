@@ -7,10 +7,18 @@ extern int main_monitor(int argc, char *argv[]);
 extern int main_setup(int argc, char *argv[]);
 extern int main_unlock(int argc, char *argv[]);
 
-#define MONITOR_EXEC "keepassxc-login-monitor"
-#define SETUP_EXEC "keepassxc-unlock-setup"
-#define UNLOCK_EXEC "keepassxc-unlock"
-#define ALL_EXEC "keepassxc-unlock-all"
+#ifndef PRODUCT_ID
+  #define PRODUCT_ID 1
+#endif
+#if PRODUCT_ID == 1
+  #define PRODUCT_LCASE "keepassxc"
+#else
+  #define PRODUCT_LCASE "chipass"
+#endif
+#define MONITOR_EXEC PRODUCT_LCASE "-login-monitor"
+#define SETUP_EXEC PRODUCT_LCASE "-unlock-setup"
+#define UNLOCK_EXEC PRODUCT_LCASE "-unlock"
+#define ALL_EXEC PRODUCT_LCASE "-unlock-all"
 
 
 int main(int argc, char *argv[]) {

@@ -64,8 +64,21 @@ elif ! type -p systemctl >/dev/null; then
   exit 1
 fi
 
+PRODUCT_LCASE=keepassxc
+PRODUCT_NAME=KeePassXC
+PERFORM_BUILD=no
+if [[ "$1" == "--build" ]]; then
+  PERFORM_BUILD=yes
+  shift
+fi
+if [[ "$1" == "--chipass" ]]; then
+  PRODUCT_LCASE=chipass
+  PRODUCT_NAME=ChiPass
+  shift
+fi
+
 echo
-echo -e "${fg_orange}This will install the latest version of keepassxc-unlock in /usr/local"
+echo -e "${fg_orange}This will install the latest version of $PRODUCT_LCASE-unlock in /usr/local"
 echo -en "${fg_cyan}Proceed? (Y/n) $fg_reset"
 set +e
 read -r resp < /dev/tty
@@ -80,8 +93,8 @@ reset_tmp
 trap "/bin/rm -rf '$tmp_dir'" 0 1 2 3 4 5 6 11 12 15
 
 echo -e "${fg_orange}Stopping login monitor service$fg_reset"
-sudo systemctl stop keepassxc-login-monitor.service 2>/dev/null || true
-if [[ "$1" == "--build" ]]; then
+sudo systemctl stop $PRODUCT_LCASE-login-monitor.service 2>/dev/null || true
+if [[ "$PERFORM_BUILD" == yes ]]; then
   echo -e "${fg_orange}Fetching the latest source code...$fg_reset"
   # first get version.sh
   $get_cmd "$tmp_dir/version.sh" "$base_url/version.sh?raw=true"
@@ -100,14 +113,16 @@ if [[ "$1" == "--build" ]]; then
   echo -e "${fg_orange}Fetching systemd service files$fg_reset"
   for file in $service_files; do
     out_file="$tmp_dir/$(basename "$file")"
+    svc_file=$(echo -n "$out_file" | sed "s|/keepassxc-|/$PRODUCT_LCASE-|;s|.in$||")
     $get_cmd "$out_file" "$base_url/$file?raw=true"
-    m4 -DINSTALL_BIN_DIR=/usr/local/sbin "$out_file" > "${out_file%.in}"
+    m4 -DINSTALL_BIN_DIR=/usr/local/sbin -DPRODUCT_LCASE=$PRODUCT_LCASE \
+       -DPRODUCT_NAME=$PRODUCT_NAME "$out_file" > "$svc_file"
     rm -f "$out_file"
   done
 else
   echo -e "${fg_orange}Fetching tarball having executables and systemd service files$fg_reset"
   # get the latest release tarball removing the commit ID from the product version
-  tarball="keepassxc-unlock-$(uname -m).tar.xz"
+  tarball="$PRODUCT_LCASE-unlock-$(uname -m).tar.xz"
   $get_cmd "$tmp_dir/$tarball" "$base_release_url/$tarball"
   $get_cmd "$tmp_dir/$tarball.sig" "$base_release_url/$tarball.sig"
   if ! gpg --verify --assert-signer "$gpg_key_id" "$tmp_dir/$tarball.sig" "$tmp_dir/$tarball"; then
@@ -155,14 +170,14 @@ echo -e "${fg_orange}Reloading systemd daemon$fg_reset"
 sudo systemctl daemon-reload
 
 echo -e "${fg_orange}Enabling and starting login monitor service$fg_reset"
-sudo systemctl enable --now keepassxc-login-monitor.service
+sudo systemctl enable --now $PRODUCT_LCASE-login-monitor.service
 
 echo -e "${fg_cyan}Fetching LICENSE and doc files and installing in /usr/local/share/doc$fg_reset"
 for file in $doc_files; do
   $get_cmd "$tmp_dir/$(basename "$file")" "$base_url/$file?raw=true"
 done
 find "$tmp_dir" -maxdepth 1 -mindepth 1 -exec \
-    sudo install -CD -t /usr/local/share/doc/keepassxc-unlock -m 0644 -o root -g root '{}' +
+    sudo install -CD -t /usr/local/share/doc/$PRODUCT_LCASE-unlock -m 0644 -o root -g root '{}' +
 clean_tmp
 
 # upgrade obsolete configuration files after user confirmation
@@ -173,21 +188,21 @@ while IFS= read -r -d $'\0' old_conf; do
     read -r resp < /dev/tty
     set -e
     if [[ "$resp" =~ [Yy] ]]; then
-      if sudo /usr/local/sbin/keepassxc-unlock-setup --upgrade "$old_conf"; then
+      if sudo /usr/local/sbin/$PRODUCT_LCASE-unlock-setup --upgrade "$old_conf"; then
         sudo rm -f "$old_conf"
         echo -e "${fg_orange}Upgraded and removed old configuration '$old_conf'$fg_reset"
       else
         echo -e "${fg_orange}\nFailed to auto-upgrade the old configuration '$old_conf'."
-        echo -e "Please remove it manually and register using keepassxc-unlock-setup.$fg_reset"
+        echo -e "Please remove it manually and register using $PRODUCT_LCASE-unlock-setup.$fg_reset"
       fi
     fi
   fi
-done < <(sudo find /etc/keepassxc-unlock -maxdepth 2 -mindepth 2 -name '*.conf' -print0 2>/dev/null)
+done < <(sudo find /etc/$PRODUCT_LCASE-unlock -maxdepth 2 -mindepth 2 -name '*.conf' -print0 2>/dev/null)
 
 echo
 echo -e "${fg_orange}Start user-specific auto-unlock service? This will only work if"
 echo "this is an upgrade and KDBX databases have already been registered using"
-echo "keepassxc-unlock-setup previously and KeePassXC is running in the current session."
+echo "$PRODUCT_LCASE-unlock-setup previously and $PRODUCT_NAME is running in the current session."
 echo -en "${fg_cyan}Proceed? (y/N) $fg_reset"
 set +e
 read -r resp < /dev/tty
@@ -204,8 +219,8 @@ if [[ "$resp" =~ [Yy] ]]; then
       org.freedesktop.login1.Manager.GetSession "string:$session_id" | \
       sed -n 's/.*object path "\([^"]*\).*/\1/p')
     if [[ -n "$session_path" ]]; then
-      echo "SESSION_PATH=$session_path" | sudo tee "/etc/keepassxc-unlock/$EUID/session.env"
-      service_name="keepassxc-unlock@${EUID}.service"
+      echo "SESSION_PATH=$session_path" | sudo tee "/etc/$PRODUCT_LCASE-unlock/$EUID/session.env"
+      service_name="$PRODUCT_LCASE-unlock@${EUID}.service"
       echo -e "${fg_orange}Starting $service_name$fg_reset"
       sudo systemctl stop "$service_name" 2>/dev/null || true
       sudo systemctl start "$service_name" || true
@@ -218,6 +233,6 @@ fi
 echo
 echo -e "${fg_green}Installation complete."
 echo
-echo "Run keepassxc-unlock-setup as root to register users' KeePassXC databases to be auto-unlocked."
+echo "Run $PRODUCT_LCASE-unlock-setup as root to register users' $PRODUCT_NAME databases to be auto-unlocked."
 echo "Once registered, logout and login, then enjoy auto-unlocking of all registered databases."
 echo -e "$fg_reset"

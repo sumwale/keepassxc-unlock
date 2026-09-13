@@ -4,6 +4,8 @@
 # passwords encrypted using a given GPG key. You will need to keep the private key
 # of the GPG key securely to use it for backup recovery later.
 #
+# Change keepassxc to chipass throughout if using latter.
+#
 # The backup is created in /etc/keepassxc-unlock-backup so users can include this in
 # their system backup (while excluding /etc/keepassxc-unlock). The files are encrypted
 # individually, so one can decrypt them individually so see the password and key file
