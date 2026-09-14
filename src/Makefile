@@ -4,8 +4,8 @@ CC = gcc
 # CFLAGS and LDFLAGS from:
 # https://best.openssf.org/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C++.html
 BASE_CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wformat -Wformat=2 -Wconversion \
-		  -Wimplicit-fallthrough -Werror=format-security -pie -fPIE -fstrict-flex-arrays=3 \
-		  -fstack-clash-protection -fstack-protector-strong
+	      -Wimplicit-fallthrough -Werror=format-security -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 \
+	      -pie -fPIE -fstrict-flex-arrays=3 -fstack-clash-protection -fstack-protector-strong
 SANITIZE =
 ifeq ($(SANITIZE),)
   CFLAGS = -O2 $(BASE_CFLAGS)
