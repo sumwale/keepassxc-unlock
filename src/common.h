@@ -11,7 +11,21 @@
 
 #include <gio/gio.h>
 
-// PRODUCT_VERSION should be defined by build scripts
+// PRODUCT_ID and PRODUCT_VERSION should be defined by build scripts
+#ifndef PRODUCT_ID
+  #define PRODUCT_ID 1
+#endif
+#if PRODUCT_ID == 1
+  #define PRODUCT_LCASE "keepassxc"
+  #define PRODUCT_NAME "KeePassXC"
+  #define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
+  #define KP_DBUS_OBJECT "/keepassxc"
+#else
+  #define PRODUCT_LCASE "chipass"
+  #define PRODUCT_NAME "ChiPass"
+  #define KP_DBUS_INTERFACE "org.chipass.ChiPass"
+  #define KP_DBUS_OBJECT "/org/chipass/ChiPass"
+#endif
 #ifndef PRODUCT_VERSION
   #define PRODUCT_VERSION ""
 #endif
@@ -22,9 +36,8 @@
 #define LOGIN_MANAGER_INTERFACE "org.freedesktop.login1.Manager"
 #define DBUS_CALL_WAIT 60000    // in milliseconds
 
-#define KP_CONFIG_DIR "/etc/keepassxc-unlock"
+#define KP_CONFIG_DIR "/etc/" PRODUCT_LCASE "-unlock"
 #define KP_CONFIG_PREFIX "kdbx-"
-#define KP_DBUS_INTERFACE "org.keepassxc.KeePassXC.MainWindow"
 
 // maximum allowed password size including terminating null;
 // uses the same limit as glibc `getpass()` (see `man getpass`)
@@ -115,16 +128,16 @@ extern guint32 get_dbus_service_process_id(GDBusConnection *session_conn, const 
 /// @brief Calculate the SHA-512 hash for the given file and return as a hexadecimal string.
 ///        Note: this implementation of SHA-512 calculation is based on `glib` functions and is
 //         2-2.5X slower than OpenSSL's implementation for large files but the overall time is
-///        still minuscule for a small file like keepassxc executable and it avoids having to add
-///        an OpenSSL dependency just for SHA-512 checksum.
+///        still minuscule for a small file like keepassxc/chipass executable and it avoids having
+///        to add an OpenSSL dependency just for SHA-512 checksum.
 /// @param path path of the file for which SHA-512 hash has to be calculated
 /// @return SHA-512 hash as a hexadecimal string which should be released with `g_free()` after use,
 ///         or NULL on failure
 extern gchar *sha512sum(const char *path);
 
-/// @brief Read keepassxc-unlock user's KDBX database configuration file that has encrypted password
-///        and key file path.
-/// @param conf_file the keepassxc-unlock configuration file
+/// @brief Read keepassxc-unlock/chipass-unlock user's KDBX database configuration file that has
+///        encrypted password and key file path.
+/// @param conf_file the keepassxc-unlock/chipass-unlock configuration file
 /// @param kdbx_file pointer to the KDBX file name string that will be filled with a dynamically
 ///                  allocated value; the return value must be released with `g_free()` after use
 ///                  or if the method failed returning -1
@@ -135,7 +148,8 @@ extern gchar *sha512sum(const char *path);
 ///          (failures are logged using glib routines)
 extern int read_configuration_file(const char *conf_file, gchar **kdbx_file, gchar **key_file);
 
-/// @brief Decrypt password recorded in keepassxc-unlock configuration file for a KDBX database.
+/// @brief Decrypt password recorded in keepassxc-unlock/chipass-unlock configuration file
+///        for a KDBX database.
 /// @param conf_file the configuration file for a KDBX database
 /// @param conf_name name of the configuration used for encryption (usually the name of file without
 ///                  the `.conf` suffix and `kdbx-` suffix)

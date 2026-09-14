@@ -11,7 +11,7 @@
 /// @param script_name name of the invoking script as obtained from `argv[0]`
 static void show_usage(const char *script_name) {
   g_print("\nUsage: %s [--version] <USER> <KDBX>\n", script_name);
-  g_print("\nSetup keepassxc-unlock password and key for a specified user's KDBX database\n");
+  g_print("\nSetup " PRODUCT_LCASE "-unlock password and key for a user's KDBX database\n");
   g_print("\nArguments:\n");
   g_print("  --version       show the version string and exit\n\n");
   g_print("  <USER>          name of the user who owns the database\n");
@@ -107,15 +107,15 @@ static void wait_for_enter() {
   g_print("\n");
 }
 
-/// @brief Search for the session D-Bus, communicate with KeePassXC process on the bus, then try
-///        unlocking the database with given password and key file, and record the SHA-512 checksum
-///        or PATH+ownership of the keepassxc process after user confirmation.
+/// @brief Search for the session D-Bus, communicate with KeePassXC/ChiPass process on the bus,
+///        then try unlocking the database with given password and key file, and record the SHA-512
+///        checksum or PATH+ownership of the keepassxc/chipass process after user confirmation.
 /// @param user_id the numeric ID of the user
 /// @param kdbx_file path of the KDBX database file
 /// @param password the password (in plain-text) to unlock the database
 /// @param key_file path of the key file required to unlock the database, can be empty
-/// @return the SHA-512 hash or PATH+ownership of the keepassxc executable verified by the user as
-///         being the correct one, or NULL on error; must be released with `g_free()` after use
+/// @return the SHA-512 hash or PATH+ownership of the keepassxc/chipass executable verified by the
+///         user as the correct one, or NULL on error; must be released with `g_free()` after use
 static gchar *verify_and_record_executable(
     uid_t user_id, const char *kdbx_file, const char *password, const char *key_file) {
   // determine the `DBUS_SESSION_BUS_ADDRESS` by searching process environments in user sessions
@@ -162,22 +162,22 @@ static gchar *verify_and_record_executable(
     g_print("\nUnable to connect to the session D-Bus '%s'!\n", session_dbus_address);
     return NULL;
   }
-  g_print("\nVerifying the given parameters. Please ensure KeePassXC is running and lock the "
-          "database '%s'\nHit <Enter> to continue.",
+  g_print("\nVerifying the given parameters. Please ensure " PRODUCT_NAME " is running and lock "
+          "the database '%s'\nHit <Enter> to continue.",
       kdbx_file);
 
   gchar *kp_rcd = NULL;
   for (int i = 0; i < MAX_TRIES; i++) {
     wait_for_enter();
-    // get the keepassxc process ID using the D-Bus API
+    // get the keepassxc/chipass process ID using the D-Bus API
     guint32 kp_pid = get_dbus_service_process_id(session_conn, KP_DBUS_INTERFACE);
     if (kp_pid == 0) {
-      g_print("Could not communicate with a running instance of KeePassXC "
-              "(DBUS_SESSION_BUS_ADDRESS = %s)\nHit <Enter> to retry.",
+      g_print("Could not communicate with a running instance of " PRODUCT_NAME
+              " (DBUS_SESSION_BUS_ADDRESS = %s)\nHit <Enter> to retry.",
           session_dbus_address);
       continue;
     }
-    // get the link to the keepassxc process executable from /proc
+    // get the link to the keepassxc/chipass process executable from /proc
     char kp_exe[128];
     snprintf(kp_exe, sizeof(kp_exe), "/proc/%u/exe", kp_pid);
     g_autofree const gchar *kp_exe_full = g_file_read_link(kp_exe, NULL);
@@ -187,7 +187,7 @@ static gchar *verify_and_record_executable(
         kp_pid, kp_exe_real);
     wait_for_enter();
     g_autoptr(GVariant) result = g_dbus_connection_call_sync(session_conn, KP_DBUS_INTERFACE,
-        "/keepassxc", KP_DBUS_INTERFACE, "openDatabase",
+        KP_DBUS_OBJECT, KP_DBUS_INTERFACE, "openDatabase",
         g_variant_new("(sss)", kdbx_file, password, key_file), NULL, G_DBUS_CALL_FLAGS_NONE,
         DBUS_CALL_WAIT, NULL, &error);
     if (!result) {
@@ -205,19 +205,20 @@ static gchar *verify_and_record_executable(
       return NULL;
     }
 
-    g_print("\nAuto-unlock can either use KeePassXC checksum for verification before unlocking "
-            "or only its path and ownership. Answer with a 'y' here only if you are sure that "
-            "checking just the path and ownership is enough for your setup.\n"
-            "Use only path and ownership for verification? (y/N) ");
+    g_print("\nAuto-unlock can either use " PRODUCT_NAME " checksum for verification before "
+            "unlocking or only its path and ownership. Answer with a 'n' or 'N' here only if you "
+            "are sure that checking just the path and ownership is enough for your setup.\n"
+            "Use checksum for verification (Y) or else only the binary path and ownership? (Y/n) ");
     fflush(stdout);
     g_autofree char *response2 = NULL;
     sz = 0;
-    if (getline(&response2, &sz, stdin) < 2 || tolower(*response2) != 'y') {
+    if (getline(&response2, &sz, stdin) < 2 || tolower(*response2) != 'n') {
       kp_rcd = sha512sum(kp_exe);
     } else {
       struct stat info;
       if (stat(kp_exe, &info) != 0) {
-        g_printerr("Failed to determine ownership of the KeePassXC executable: %s", STR_ERROR);
+        g_printerr(
+            "Failed to determine ownership of the " PRODUCT_NAME " executable: %s", STR_ERROR);
         return NULL;
       }
       kp_rcd = g_strdup_printf("path=%s\nownership=%u:%u", kp_exe_real, info.st_uid, info.st_gid);
@@ -225,7 +226,8 @@ static gchar *verify_and_record_executable(
     if (kp_rcd != NULL) break;
   }
   if (!kp_rcd) {
-    g_printerr("Maximum tries exhausted. Unable to register a valid instance of KeePassXC.\n");
+    g_printerr(
+        "Maximum tries exhausted. Unable to register a valid instance of " PRODUCT_NAME ".\n");
   }
   return kp_rcd;
 }
@@ -416,7 +418,7 @@ int main_setup(int argc, char *argv[]) {
   // delete obsolete keepassxc.sha512 file
   snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.sha512", user_conf_dir);
   unlink(kp_rcd_file);
-  snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.rcd", user_conf_dir);
+  snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/" PRODUCT_LCASE ".rcd", user_conf_dir);
 
   // create configuration directory
   if (g_mkdir_with_parents(user_conf_dir, 0700) != 0) {

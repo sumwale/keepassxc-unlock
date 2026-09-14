@@ -10,7 +10,18 @@ PKG_INSTALL = false
 PRODUCT_VERSION := $(shell bash ./version.sh)
 DEFAULT_PLATFORMS = linux/x86_64 linux/aarch64
 
-export BUILD_DIR PRODUCT_VERSION
+PRODUCT_ID = 1
+ifeq ($(PRODUCT_ID), 1)
+    PRODUCT_LCASE = keepassxc
+    PRODUCT_NAME = KeePassXC
+else ifeq ($(PRODUCT_ID), 2)
+    PRODUCT_LCASE = chipass
+    PRODUCT_NAME = ChiPass
+else
+    $(error Invalid PRODUCT_ID $(PRODUCT_ID). Expected either 1 for KeePassXC or 2 for ChiPass.)
+endif
+
+export BUILD_DIR PRODUCT_VERSION PRODUCT_ID PRODUCT_LCASE PRODUCT_NAME
 
 .PHONY: all all-static all-static-musl mk_builddir clean install uninstall package
 
@@ -33,7 +44,7 @@ clean:
 	$(MAKE) -C $(SYSTEMD_DIR) clean
 	$(MAKE) -C $(SRC_DIR) clean
 	rmdir $(BUILD_DIR) 2>/dev/null || /bin/true
-	rm -f keepassxc-unlock-*.tar.*
+	rm -f $(PRODUCT_LCASE)-unlock-*.tar.*
 
 install: mk_builddir
 	$(MAKE) -C $(SRC_DIR) install
@@ -47,8 +58,8 @@ package:
 	@make all-static-musl PLATFORMS="$(DEFAULT_PLATFORMS)"
 	@for platform in $(DEFAULT_PLATFORMS); do \
 		arch="$${platform#linux/}"; \
-		package_name=keepassxc-unlock-$${arch}.tar.xz; \
-		binaries=$$(compgen -G "$(BUILD_DIR)/keepassxc-*-$${arch}-static"); \
+		package_name=$(PRODUCT_LCASE)-unlock-$${arch}.tar.xz; \
+		binaries=$$(compgen -G "$(BUILD_DIR)/$(PRODUCT_LCASE)-*-$${arch}-static"); \
 		binary_names=$$(echo "$${binaries}" | xargs -n1 basename); \
 		services=$$(compgen -G "$(BUILD_DIR)/*.service"); \
 		service_names=$$(echo "$${services}" | xargs -n1 basename); \

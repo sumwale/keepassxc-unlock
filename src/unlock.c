@@ -19,7 +19,7 @@ typedef struct {
   int session_valid;                // return value of `session_valid_for_unlock`
   bool session_locked;              // holds the previous locked state of the session
   bool session_active;              // holds the previous active state of the session
-  int kp_subscription_id;           // the subscription ID of KeePassXC `NameOwnerChanged` signals
+  int kp_subscription_id;           // subscription ID of KeePassXC/ChiPass NameOwnerChanged signal
 } MonitoredSession;
 
 
@@ -27,8 +27,9 @@ typedef struct {
 /// @param script_name name of the invoking script as obtained from `argv[0]`
 static void show_usage(const char *script_name) {
   g_print("\nUsage: %s [--version] <USER_ID> <SESSION_PATH>\n", script_name);
-  g_print("\nMonitor a session for login and screen unlock events to unlock configured KeepassXC "
-          "databases\n");
+  g_print(
+      "\nMonitor a session for login and screen unlock events to unlock configured " PRODUCT_NAME
+      " databases\n");
   g_print("\nArguments:\n");
   g_print("  --version       show the version string and exit\n\n");
   g_print("  <USER_ID>       numeric ID of user who owns the session to be monitored\n");
@@ -80,13 +81,13 @@ static bool send_session_notification(GDBusConnection *session_conn, const gchar
   return result ? true : false;
 }
 
-/// @brief Verify that the KeePassXC process belongs to the selected session. This is done by
-///        comparing the $DISPLAY variable of the process with the `Display` property of the session
-///        for X11, or checking that $WAYLAND_DISPLAY is non-empty for Wayland.
-/// @param kp_pid process ID of KeePassXC
+/// @brief Verify that the KeePassXC/ChiPass process belongs to the selected session. This is done
+///        by comparing the $DISPLAY variable of the process with the `Display` property of the
+///        session for X11, or checking that $WAYLAND_DISPLAY is non-empty for Wayland.
+/// @param kp_pid process ID of KeePassXC/ChiPass
 /// @param is_wayland `true` if the session is a Wayland one, else `false` if it is X11
 /// @param display the $DISPLAY variable for the session as retrieved from its `Display` property
-/// @return `true` if the KeePassXC is running in the session else `false`
+/// @return `true` if the KeePassXC/ChiPass is running in the session else `false`
 static bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar *display) {
   if (is_wayland) {
     // the `Display` property of the session is not set for the case of Wayland, and there is no way
@@ -111,24 +112,24 @@ static bool verify_process_session(guint32 kp_pid, bool is_wayland, const gchar 
 /// @brief Get the executable's SHA-512 hash or PATH+ownership from /proc/<pid>/exe and compare
 ///        against the recorded good checksum or PATH+ownership.
 /// @param session_conn the `GBusConnection` object for the user's session D-Bus
-/// @param user_conf_dir user's configuration directory (`/etc/keepassxc-unlock/<uid>`)
-/// @param kp_pid process ID of KeePassXC
+/// @param user_conf_dir user's configuration directory (`/etc/<product>-unlock/<uid>`)
+/// @param kp_pid process ID of KeePassXC/ChiPass
 /// @return `true` if the checksum or PATH+ownership matched else `false`
 static bool verify_process_exe_rcd(
     GDBusConnection *session_conn, const char *user_conf_dir, guint32 kp_pid) {
   // get the executable's SHA-512 hash from /proc/<pid>/exe and compare against the
   // recorded good checksum
   char kp_rcd_file[128], kp_exe[128];
-  // check obsolete SHA-512 file
+  // first check obsolete SHA-512 file
   snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.sha512", user_conf_dir);
   if (access(kp_rcd_file, F_OK) != 0) {
-    // check obsolete SHA-512 file
-    snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/keepassxc.rcd", user_conf_dir);
+    // use the new SHA-512 file
+    snprintf(kp_rcd_file, sizeof(kp_rcd_file), "%s/" PRODUCT_LCASE ".rcd", user_conf_dir);
   }
   g_autofree gchar *expected_rcd = NULL;
   if (!g_file_get_contents(kp_rcd_file, &expected_rcd, NULL, NULL)) {
-    g_warning(
-        "Failed unlock due to unreadable %s - run 'sudo keepassxc-unlock-setup'", kp_rcd_file);
+    g_warning("Failed unlock due to unreadable %s - run 'sudo " PRODUCT_LCASE "-unlock-setup'",
+        kp_rcd_file);
     return false;
   }
   snprintf(kp_exe, sizeof(kp_exe), "/proc/%u/exe", kp_pid);
@@ -141,7 +142,7 @@ static bool verify_process_exe_rcd(
   if (g_str_has_prefix(expected_rcd, "path=")) {
     struct stat info;
     if (stat(kp_exe, &info) != 0) {
-      g_critical("Failed to determine ownership of the KeePassXC executable: %s", STR_ERROR);
+      g_critical("Failed to determine ownership of the " PRODUCT_NAME " executable: %s", STR_ERROR);
       return false;
     }
     current_rcd =
@@ -152,15 +153,15 @@ static bool verify_process_exe_rcd(
     check_type = "checksum";
   }
   if (g_strcmp0(current_rcd, expected_rcd) != 0) {
-    g_critical("Aborting unlock due to %s mismatch in keepassxc (PID %u EXE %s)", check_type,
-        kp_pid, kp_exe_real);
+    g_critical("Aborting unlock due to %s mismatch in " PRODUCT_LCASE " (PID %u EXE %s)",
+        check_type, kp_pid, kp_exe_real);
     g_autofree const gchar *notify_body = g_strdup_printf(
-        "If KeePassXC has been updated, then run \"sudo keepassxc-unlock-setup ...\" for one of "
-        "the KDBX databases.\nOtherwise this could be an unknown process snooping on D-Bus.\n\n "
-        "The offending process ID is %u having executable pointing to %s",
+        "If " PRODUCT_NAME " has been updated, then run \"sudo " PRODUCT_LCASE "-unlock-setup ..."
+        "\" for one of the KDBX databases.\nOtherwise this could be an unknown process snooping "
+        "on D-Bus.\n\nThe offending process ID is %u having executable pointing to %s",
         kp_pid, kp_exe_real);
-    if (!send_session_notification(session_conn, "keepassxc-unlock", "system-lock-screen",
-            "Checksum mismatch in keepassxc", notify_body, 2, 120000)) {
+    if (!send_session_notification(session_conn, PRODUCT_LCASE "-unlock", "system-lock-screen",
+            "Checksum mismatch in " PRODUCT_LCASE, notify_body, 2, 120000)) {
       g_critical("Failed to send D-Bus notification to the user for SHA-512 mismatch");
     }
     return false;
@@ -183,33 +184,34 @@ static void on_database_unlock(GDBusConnection *session_conn, GAsyncResult *res,
   }
 }
 
-/// @brief Unlock all the KDBX databases that were registered (using `keepassxc-unlock-setup`)
-///        of the given user using KeePassXC's D-Bus API.
+/// @brief Unlock all the KDBX databases that were registered (using `keepassxc-unlock-setup` or
+///        `chipass-unlock-setup`) of the given user using KeePassXC's/ChiPass' D-Bus API.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param session_data instance of `MonitoredSession` struct having information of the session
 ///                     being monitored
-/// @param wait_secs seconds to try connecting to the KeePassXC D-Bus service before giving up
+/// @param wait_secs seconds to try connecting to the KeePassXC/ChiPass D-Bus service before failing
 /// @param check_main_loop if set to `true` then check for `GMainLoop` to be running before unlock
 /// @return `true` if connection was successful and unlock was attempted (though one or more
 ///         databases may have failed to unlock due to other reasons), and `false` if connection to
-///         KeePassXC failed or session was still locked
+///         KeePassXC/ChiPass failed or session was still locked
 static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSession *session_data,
     int wait_secs, bool check_main_loop) {
   g_assert(session_data);
 
   GDBusConnection *session_conn = session_data->session_conn;
-  // loop till `wait_secs` to get the ID of the process providing KeePassXC's D-Bus API
+  // loop till `wait_secs` to get the ID of the process providing KeePassXC's/ChiPass' D-Bus API
   guint32 kp_pid = 0;
   for (int i = 0; i < wait_secs; i++) {
     if ((kp_pid = get_dbus_service_process_id(session_conn, KP_DBUS_INTERFACE)) != 0) break;
     sleep(1);
   }
   if (kp_pid == 0) {
-    g_warning("Failed to connect to KeePassXC D-Bus API within %d secs", wait_secs);
+    g_warning("Failed to connect to " PRODUCT_NAME " D-Bus API within %d secs", wait_secs);
     return false;
   }
 
-  // verify from the KeePassXC executable's environment that it is running in the selected session
+  // verify from the KeePassXC/ChiPass executable's environment that it is running in the
+  // selected session
   bool is_wayland = false;
   g_autofree gchar *display = NULL;
   if (session_valid_for_unlock(system_conn, session_data->session_path, session_data->user_id, NULL,
@@ -219,13 +221,13 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
     return false;
   }
   if (!verify_process_session(kp_pid, is_wayland, display)) {
-    g_warning("Skipping unlock due to mismatch of $DISPLAY/$WAYLAND_DISPLAY of KeePassXC process "
-              "with ID %u against the session properties",
+    g_warning("Skipping unlock due to mismatch of $DISPLAY/$WAYLAND_DISPLAY of " PRODUCT_NAME
+              " process with ID %u against the session properties",
         kp_pid);
     return false;
   }
 
-  // verify the KeePassXC executable's checksum
+  // verify the KeePassXC/ChiPass executable's checksum
   char user_conf_dir[100];
   snprintf(user_conf_dir, sizeof(user_conf_dir), "%s/%u", KP_CONFIG_DIR, session_data->user_id);
   if (!verify_process_exe_rcd(session_conn, user_conf_dir, kp_pid)) return false;
@@ -267,7 +269,7 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
         break;
       }
 
-      g_dbus_connection_call(session_conn, KP_DBUS_INTERFACE, "/keepassxc", KP_DBUS_INTERFACE,
+      g_dbus_connection_call(session_conn, KP_DBUS_INTERFACE, KP_DBUS_OBJECT, KP_DBUS_INTERFACE,
           "openDatabase", g_variant_new("(sss)", kdbx_file, decrypted_passwd, key_file), NULL,
           G_DBUS_CALL_FLAGS_NONE, -1, NULL, (GAsyncReadyCallback)on_database_unlock,
           g_strdup(kdbx_file) /* callback should have its own copy */);
@@ -278,7 +280,7 @@ static bool unlock_databases(GDBusConnection *system_conn, const MonitoredSessio
   return true;
 }
 
-/// @brief Callback to handle KeePassXC startup when not present at the start of this process.
+/// @brief Callback to handle KeePassXC/ChiPass startup when not present initially.
 static void handle_keepassxc_start(GDBusConnection *session_conn, const char *sender_name,
     const char *object_path, const char *interface_name, const char *signal_name,
     GVariant *parameters, gpointer user_data) {
@@ -290,12 +292,12 @@ static void handle_keepassxc_start(GDBusConnection *session_conn, const char *se
       *new_owner != '\0') {
     g_autoptr(GDBusConnection) system_conn = dbus_connect(true, true);
     if (!system_conn) return;
-    g_message(
-        "KeePassXC started, unlocking registered database(s) for UID=%u", session_data->user_id);
+    g_message(PRODUCT_NAME " started, unlocking registered database(s) for UID=%u",
+        session_data->user_id);
     unlock_databases(system_conn, session_data, 5, true);
-    // unsubscribe to this signal here on (so if user closes and start KeePassXC again, then it
-    // won't be auto-unlocked by design, though it will still be unlocked if the session goes from
-    // lock->unlock or inactive->active)
+    // unsubscribe to this signal here on (so if user closes and start KeePassXC/ChiPass again,
+    // then it won't be auto-unlocked by design, though it will still be unlocked if the session
+    // goes from lock->unlock or inactive->active)
     int kp_subscription_id = g_atomic_int_exchange(&session_data->kp_subscription_id, 0);
     if (kp_subscription_id != 0) {
       g_dbus_connection_signal_unsubscribe(session_conn, (guint)kp_subscription_id);
@@ -303,27 +305,28 @@ static void handle_keepassxc_start(GDBusConnection *session_conn, const char *se
   }
 }
 
-/// @brief Unlock all the KDBX databases that were registered (using `keepassxc-unlock-setup`)
-///        of the given user on program startup, or monitor KeePassXC start to do the same
-///        if it is not yet running.
+/// @brief Unlock all the KDBX databases that were registered (using `keepassxc-unlock-setup` or
+///        `chipass-unlock-setup`) of the given user on program startup, or monitor KeePassXC start
+///        to do the same if it is not yet running.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param session_data instance of `MonitoredSession` struct having information of the session
 ///                     being monitored
 static void unlock_databases_on_startup(
     GDBusConnection *system_conn, MonitoredSession *session_data) {
-  g_message(
-      "Startup: unlocking registered KeePassXC database(s) for UID=%u", session_data->user_id);
+  g_message("Startup: unlocking registered " PRODUCT_NAME " database(s) for UID=%u",
+      session_data->user_id);
   if (!unlock_databases(system_conn, session_data, 15, false)) {
     // if unlock at startup failed, then subscribe to `NameOwnerChanged` signals to detect start
-    // of KeePassXC (there is a small race here that KeePassXC start can happen between these
+    // of KeePassXC/ChiPass (there is a small race here that the start can happen between these
     // two which is fine since the worst case then is that auto-unlock didn't happen for a rare
-    // case if KeePassXC wasn't started on session start)
+    // case if KeePassXC/ChiPass wasn't started on session start)
     guint kp_subscription_id = g_dbus_connection_signal_subscribe(session_data->session_conn,
         DBUS_MAIN_OBJECT_NAME, DBUS_MAIN_OBJECT_NAME, "NameOwnerChanged", "/org/freedesktop/DBus",
         NULL, G_DBUS_SIGNAL_FLAGS_NONE, handle_keepassxc_start, session_data, NULL);
     if (kp_subscription_id != 0) {
       g_atomic_int_set(&session_data->kp_subscription_id, (int)kp_subscription_id);
-      g_message("No KeePassXC running or failed to connect, monitoring KeePassXC start");
+      g_message(
+          "No " PRODUCT_NAME " running or failed to connect, monitoring " PRODUCT_NAME " start");
     }
   }
 }
@@ -413,8 +416,9 @@ int main_unlock(int argc, char *argv[]) {
 
   // check if there are any database configuration files for the user
   if (!user_has_db_configs(user_id)) {
-    g_printerr(
-        "No configuration found for UID=%u - run 'sudo keepassxc-unlock-setup ...'\n", user_id);
+    g_printerr("No configuration found for UID=%u - run 'sudo " PRODUCT_LCASE
+               "-unlock-setup ...'\n",
+        user_id);
     return 0;
   }
 
@@ -441,8 +445,8 @@ int main_unlock(int argc, char *argv[]) {
     sleep(1);
   }
   // fallback to default if `DBUS_SESSION_BUS_ADDRESS` is not set for any process of this session
-  // (note that keepassxc will likely not "belong" to this session, since in systemd-logind setups
-  //    user's session systemd daemon is root for most processes which detaches from session)
+  // (note that keepassxc/chipass will likely not "belong" to this session, since in systemd-logind
+  //    setups user's session systemd daemon is root for most processes which detaches from session)
   if (!session_dbus_address) {
     g_warning("Failed to find DBUS_SESSION_BUS_ADDRESS in the environment of any of the processes "
               "belonging to the scope '%s' of this session. Falling back to the default value.",

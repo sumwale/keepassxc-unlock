@@ -1,5 +1,7 @@
 #!/usr/bin/expect -f
 
+# Change keepassxc to chipass and KeePassXC to ChiPass throughout if using latter.
+#
 # This example expect script can be used to run keepassxc-unlock-setup non-interactively
 # piping the database password at stdin. For example, the password can be in a gpg
 # encrypted file, so one can decrypt it and pipe to this script. It needs three arguments

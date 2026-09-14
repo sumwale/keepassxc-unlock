@@ -10,9 +10,9 @@ typedef struct {
   guint subscription_id;    // the subscription ID of a session's `PropertiesChanged` signals
 } SessionData;
 
-/// @brief Start a KeepassXC unlock service for a given session. The service runs as a separate
-///        systemd service rather than a separate thread in the current service to allow for easy
-///        management of the service, better resource separation among others.
+/// @brief Start a KeepassXC/ChiPass unlock service for a given session. The service runs as a
+///        separate systemd service rather than a separate thread in the current service to
+///        allow for easy management of the service, better resource separation among others.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param session_path path of the session for which the unlock service has to be started
 /// @param user_id the numeric ID of the user
@@ -40,7 +40,8 @@ static void tty_session_cleanup(GDBusConnection *system_conn, const gchar *sessi
 }
 
 /// @brief Callback to check for a non-graphical session switching to a valid graphical one, and if
-///        so, starts user-specific `keepassxc-unlock@<uid>.service` to handle auto-unlock for it.
+///        so, starts user-specific `keepassxc-unlock@<uid>.service`
+///        (or `chipass-unlock@<uid>.service`) to handle auto-unlock for it.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param sender_name name of the sender of the event
 /// @param session_path path of the session for which the event was raised
@@ -68,7 +69,8 @@ static void on_session_properties_changed(GDBusConnection *system_conn, const gc
 }
 
 /// @brief Callback for creation of a new session that checks if it is a valid target for auto-lock
-///        and if so, then starts user-specific `keepassxc-unlock@<uid>.service` to handle the same.
+///        and if so, then starts user-specific `keepassxc-unlock@<uid>.service`
+///        (or `chipass-unlock@<uid>.service`) to handle the same.
 /// @param system_conn the `GBusConnection` object for the system D-Bus
 /// @param sender_name name of the sender of the event
 /// @param object_path path of the object for which the event was raised
@@ -150,7 +152,7 @@ void start_unlock_service(
 
   // start the systemd service for the user which gets instantiated from the template service
   char service_name[128];
-  snprintf(service_name, sizeof(service_name), "keepassxc-unlock@%u.service", user_id);
+  snprintf(service_name, sizeof(service_name), PRODUCT_LCASE "-unlock@%u.service", user_id);
   g_autoptr(GError) error = NULL;
   // first stop any existing service due to unclean session close or similar
   // (see https://github.com/sumwale/keepassxc-unlock/issues/21)
@@ -158,6 +160,7 @@ void start_unlock_service(
       "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StopUnit",
       g_variant_new("(ss)", service_name, "replace"), NULL, G_DBUS_CALL_FLAGS_NONE, DBUS_CALL_WAIT,
       NULL, &error);
+  if (error) g_clear_pointer(&error, g_error_free);
   // send the `StartUnit` command to start the service (equivalent to `systemctl start ...`)
   g_autoptr(GVariant) result = g_dbus_connection_call_sync(system_conn, "org.freedesktop.systemd1",
       "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StartUnit",

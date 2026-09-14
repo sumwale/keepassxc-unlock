@@ -1,12 +1,12 @@
 [Unit]
-Description=Monitor logins to start KeePassXC auto-unlock
+Description=Monitor logins to start PRODUCT_NAME auto-unlock
 Wants=display-manager.service
 After=display-manager.service
 
 [Service]
 Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/sbin
 Restart=on-failure
-ExecStart=INSTALL_BIN_DIR/keepassxc-login-monitor
+ExecStart=INSTALL_BIN_DIR/PRODUCT_LCASE-login-monitor
 
 LockPersonality=true
 MemoryDenyWriteExecute=yes

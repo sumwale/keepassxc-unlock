@@ -1,13 +1,13 @@
 [Unit]
-Description=Auto-unlock registered KeePassXC databases
+Description=Auto-unlock registered PRODUCT_NAME databases
 Wants=graphical.target
 After=graphical.target
 
 [Service]
 Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/sbin
-EnvironmentFile=/etc/keepassxc-unlock/%i/session.env
+EnvironmentFile=/etc/PRODUCT_LCASE-unlock/%i/session.env
 Restart=on-failure
-ExecStart=INSTALL_BIN_DIR/keepassxc-unlock %i $SESSION_PATH
+ExecStart=INSTALL_BIN_DIR/PRODUCT_LCASE-unlock %i $SESSION_PATH
 
 LockPersonality=true
 MemoryDenyWriteExecute=yes
