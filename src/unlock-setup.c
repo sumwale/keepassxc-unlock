@@ -206,13 +206,13 @@ static gchar *verify_and_record_executable(
     }
 
     g_print("\nAuto-unlock can either use " PRODUCT_NAME " checksum for verification before "
-            "unlocking or only its path and ownership. Answer with a 'y' here only if you are "
-            "sure that checking just the path and ownership is enough for your setup.\n"
-            "Use only path and ownership for verification? (y/N) ");
+            "unlocking or only its path and ownership. Answer with a 'n' or 'N' here only if you "
+            "are sure that checking just the path and ownership is enough for your setup.\n"
+            "Use checksum for verification (Y) or else only the binary path and ownership? (Y/n) ");
     fflush(stdout);
     g_autofree char *response2 = NULL;
     sz = 0;
-    if (getline(&response2, &sz, stdin) < 2 || tolower(*response2) != 'y') {
+    if (getline(&response2, &sz, stdin) < 2 || tolower(*response2) != 'n') {
       kp_rcd = sha512sum(kp_exe);
     } else {
       struct stat info;
