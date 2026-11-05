@@ -47,10 +47,10 @@ function reset_tmp() {
 # ensure that system PATHs are always searched first
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin:$PATH"
 
-if type -p curl >/dev/null; then
-  get_cmd="curl -fsSL -o"
-elif type -p wget >/dev/null; then
+if type -p wget >/dev/null; then
   get_cmd="wget -q -O"
+elif type -p curl >/dev/null; then
+  get_cmd="curl -fsSL -o"
 else
   echo -e "${fg_red}Neither curl nor wget found!$fg_reset"
   exit 1
@@ -125,7 +125,7 @@ else
   tarball="$PRODUCT_LCASE-unlock-$(uname -m).tar.xz"
   $get_cmd "$tmp_dir/$tarball" "$base_release_url/$tarball"
   $get_cmd "$tmp_dir/$tarball.sig" "$base_release_url/$tarball.sig"
-  if ! gpg --verify --assert-signer "$gpg_key_id" "$tmp_dir/$tarball.sig" "$tmp_dir/$tarball"; then
+  if ! gpg --verify "$tmp_dir/$tarball.sig" "$tmp_dir/$tarball"; then
     echo
     echo -e "${fg_orange}Signature verification failed for the package"
     echo -en "${fg_cyan}Fetch the public key and try again? (Y/n) $fg_reset"
@@ -137,7 +137,7 @@ else
       exit 3
     fi
     gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys "$gpg_key_id"
-    gpg --verify --assert-signer "$gpg_key_id" "$tmp_dir/$tarball.sig" "$tmp_dir/$tarball"
+    gpg --verify "$tmp_dir/$tarball.sig" "$tmp_dir/$tarball"
   fi
   tar -C "$tmp_dir" -xvf "$tmp_dir/$tarball"
   rm -f "$tmp_dir/$tarball" "$tmp_dir/$tarball.sig"

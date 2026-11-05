@@ -58,7 +58,7 @@ if this gets integrated into KeePassXC/ChiPass distribution (except if it is run
 
 Newer releases also provide an option when running the unlock-setup program to use the PATH
 and ownership of the keepassxc/chipass executable instead of the checksum. This should be
-used with caution since it degrades the security of the unlock service since it might
+used with great caution since it degrades the security of the unlock service since it might
 be possible for containerized programs, for example, to fool the check.
 
 **Now that I have to never enter the passwords, I will likely forget them**
@@ -112,7 +112,7 @@ OR
 wget -qO- "https://github.com/sumwale/keepassxc-unlock/blob/main/install.sh?raw=true" | bash
 ```
 
-To install the latest release for ChiPass add `/dev/stdin --chipass` at the end of `bash`
+To install the latest release for ChiPass, add `/dev/stdin --chipass` at the end of `bash`
 in the commands above:
 
 ```sh
