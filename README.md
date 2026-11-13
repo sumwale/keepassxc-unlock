@@ -31,6 +31,27 @@ authentication by watching the system D-Bus events, and the service takes over
 thereafter watching for the session events on the system D-Bus and invoking for database
 unlock (for one or any number of registered databases).
 
+**How is this different from the "quick unlock" feature?**
+
+KeePassXC 2.8.0 release added a "quick unlock" feature for Linux (this was already
+  available in Windows and MacOS) that uses a secret key to encrypt and store the database
+password in memory, while the key is split and stored in the process memory as well as
+in the kernel process keyring. With this, KeePassXC allows user to unlock the database
+by providing normal user authentication once database password has been provided at
+startup. This differs from keepassxc-unlock project in several significant ways:
+
+ * Firstly, this feature is only useful if user has an alternative "quick" authentication
+   mechanism like fingerprint or a security key or something similar, or else the user's
+   password is significantly simpler than the database password.
+ * It does not obviate the need to provide the database password at least once at
+   KeePassXC startup after login.
+ * Even then user still needs to authenticate every time KeePassXC auto locks itself,
+   like after a screen lock or sleep.
+
+In comparison, the auto unlock offered by the services of this project perform the unlock
+completely automatically during the initial startup of KeePassXC as well as for any
+subsequent auto-locks of KeePassXC.
+
 **Doesn't this mean that administrator has full access to all my passwords?**
 
 If the root user or root owned processes are not trusted, then all KeePassXC/ChiPass passwords
@@ -184,6 +205,11 @@ The setup will warn if TPM2 support cannot be detected and, if possible, provide
 suggestions. Further it will test these parameters for user confirmation and also
 register the keepassxc/chipass binary SHA512 checksum or PATH+owership which is verified
 later before auto-unlocking by the system service.
+
+Note that the "quick unlock" feature may be enabled by default in the new releases of
+KeePassXC/ChiPass which needs to be disabled in Tools->Settings->Security for the
+auto unlock to work correctly (otherwise that feature will popup user authentication
+  dialog before this service even has a chance to auto unlock).
 
 That's it. Just logout then login again, and all the KeePassXC/ChiPass databases registered
 above will be automatically unlocked, and will continue being unlocked after a screen
